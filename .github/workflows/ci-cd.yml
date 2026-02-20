@@ -1,0 +1,281 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  GO_VERSION: "1.23"
+  DOCKER_REGISTRY: docker.io
+  IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/auth-service
+
+jobs:
+  # ═══════════════════════════════════════════════════════════
+  # Job 1: Build et Tests
+  # ═══════════════════════════════════════════════════════════
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Nécessaire pour le versioning
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Verify dependencies
+        run: |
+          go mod verify
+          go mod download
+
+      - name: Build
+        run: |
+          go build -v -o auth-service ./cmd/main.go
+          echo "✅ Build réussi"
+
+      - name: Run Tests
+        run: |
+          go test ./... -v -coverprofile=coverage.out -covermode=atomic
+          go tool cover -func=coverage.out
+
+      - name: Upload coverage to artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.out
+            coverage.html
+
+  # ═══════════════════════════════════════════════════════════
+  # Job 2: Security Scanning
+  # ═══════════════════════════════════════════════════════════
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Run gosec Security Scanner
+        uses: securego/gosec@master
+        with:
+          args: "-no-fail -fmt sarif -out gosec-results.sarif ./..."
+
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec-results.sarif
+
+      - name: Check for vulnerabilities
+        run: |
+          go install github.com/sonatype-nexus-community/nancy@latest
+          go list -json -deps ./... | nancy sleuth
+
+  # ═══════════════════════════════════════════════════════════
+  # Job 3: Versioning & Tagging
+  # ═══════════════════════════════════════════════════════════
+  versioning:
+    name: Version & Tag
+    runs-on: ubuntu-latest
+    needs: [build-and-test, security]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    outputs:
+      version: ${{ steps.semver.outputs.version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get next version
+        id: semver
+        run: |
+          # Récupérer le dernier tag
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "Dernier tag: $LATEST_TAG"
+
+          # Extraire le numéro de version
+          VERSION=${LATEST_TAG#v}
+          IFS='.' read -r -a VERSION_PARTS <<< "$VERSION"
+
+          MAJOR="${VERSION_PARTS[0]:-0}"
+          MINOR="${VERSION_PARTS[1]:-0}"
+          PATCH="${VERSION_PARTS[2]:-0}"
+
+          # Incrémenter la version patch
+          PATCH=$((PATCH + 1))
+          NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+
+          # Si commit contient [major] ou [minor], incrémenter en conséquence
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          if [[ $COMMIT_MSG == *"[major]"* ]]; then
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+            NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          elif [[ $COMMIT_MSG == *"[minor]"* ]]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+            NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          fi
+
+          echo "Nouvelle version: $NEW_VERSION"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create and push tag
+        run: |
+          VERSION="${{ steps.semver.outputs.version }}"
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag -a "$VERSION" -m "Release $VERSION"
+          git push origin "$VERSION"
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.semver.outputs.version }}
+          release_name: Release ${{ steps.semver.outputs.version }}
+          body: |
+            ## Changes in this Release
+            - Auto-generated release for version ${{ steps.semver.outputs.version }}
+
+            ## Docker Image
+            ```
+            docker pull ${{ env.IMAGE_NAME }}:${{ steps.semver.outputs.version }}
+            ```
+          draft: false
+          prerelease: false
+
+  # ═══════════════════════════════════════════════════════════
+  # Job 4: Build & Push Docker Image
+  # ═══════════════════════════════════════════════════════════
+  docker:
+    name: Build & Push Docker
+    runs-on: ubuntu-latest
+    needs: versioning
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.versioning.outputs.version }}
+            type=raw,value=latest
+            type=sha,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
+
+  # ═══════════════════════════════════════════════════════════
+  # Job 5: Deploy to Production
+  # ═══════════════════════════════════════════════════════════
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [versioning, docker]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          # Installer kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+          # Récupérer l'IP du serveur K3s depuis Terraform outputs
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig.yaml
+          export KUBECONFIG=kubeconfig.yaml
+
+          # Mettre à jour l'image dans le deployment
+          kubectl set image deployment/auth-service \
+            auth-service=${{ env.IMAGE_NAME }}:${{ needs.versioning.outputs.version }} \
+            -n production
+
+          # Attendre le rollout
+          kubectl rollout status deployment/auth-service -n production
+
+          echo "✅ Déploiement réussi!"
+
+      - name: Send notification
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          VERSION="${{ needs.versioning.outputs.version }}"
+
+          # Envoyer une notification webhook
+          curl -X POST "${{ secrets.WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"service\": \"auth-service\",
+              \"version\": \"$VERSION\",
+              \"status\": \"$STATUS\",
+              \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
+              \"commit\": \"${{ github.sha }}\",
+              \"author\": \"${{ github.actor }}\"
+            }" || echo "⚠️ Notification webhook failed (non-blocking)"
+
+      - name: Deployment summary
+        run: |
+          echo "## 🚀 Déploiement réussi!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ needs.versioning.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ env.IMAGE_NAME }}:${{ needs.versioning.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Auteur**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY

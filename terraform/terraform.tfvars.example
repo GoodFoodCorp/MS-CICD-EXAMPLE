@@ -1,0 +1,41 @@
+# ═══════════════════════════════════════════════════════════
+# Configuration AWS
+# ═══════════════════════════════════════════════════════════
+aws_region         = "eu-west-3"
+environment        = "prod"
+project_name       = "auth-service"
+
+# ═══════════════════════════════════════════════════════════
+# VPC Configuration
+# ═══════════════════════════════════════════════════════════
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = ["eu-west-3a", "eu-west-3b"]
+public_subnets     = ["10.0.1.0/24"]
+private_subnets    = ["10.0.10.0/24", "10.0.11.0/24"]
+
+# ═══════════════════════════════════════════════════════════
+# EC2 Configuration
+# ═══════════════════════════════════════════════════════════
+instance_type      = "t3.medium"
+key_name           = "auth-service-key"
+
+# ═══════════════════════════════════════════════════════════
+# RDS Configuration
+# ═══════════════════════════════════════════════════════════
+db_allocated_storage = 20
+db_instance_class    = "db.t3.micro"
+db_name              = "authdb"
+db_username          = "authuser"
+# ⚠️ NE PAS COMMITER LE MOT DE PASSE! Utiliser une variable d'environnement:
+# export TF_VAR_db_password="votre_mot_de_passe_securise"
+# db_password = "CHANGEME"
+
+# ═══════════════════════════════════════════════════════════
+# Application Configuration
+# ═══════════════════════════════════════════════════════════
+# Remplacer par votre username Docker Hub
+docker_username = "votreusername"
+app_port        = 8081
+
+# URL du webhook pour les notifications (webhook.site pour tests)
+webhook_url = "https://webhook.site/your-unique-id"
