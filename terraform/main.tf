@@ -161,12 +161,17 @@ resource "aws_security_group" "rds" {
 }
 
 # ═══════════════════════════════════════════════════════════
-# Clé SSH
+# Clé SSH (générée automatiquement)
 # ═══════════════════════════════════════════════════════════
+
+resource "tls_private_key" "deployer" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
 
 resource "aws_key_pair" "deployer" {
   key_name   = var.key_name
-  public_key = file(pathexpand("~/.ssh/id_rsa.pub"))
+  public_key = tls_private_key.deployer.public_key_openssh
 
   tags = {
     Name = "${var.project_name}-key"

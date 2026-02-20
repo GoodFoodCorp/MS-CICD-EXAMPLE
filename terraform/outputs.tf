@@ -99,3 +99,9 @@ output "kubeconfig_export_command" {
   description = "Commande pour exporter le kubeconfig en base64 (pour GitHub Secrets)"
   value       = "ssh -i ~/.ssh/id_rsa ec2-user@${aws_eip.k3s.public_ip} 'cat /home/ec2-user/.kube/config' | base64"
 }
+
+output "ssh_private_key" {
+  description = "Clé privée SSH pour se connecter au serveur (à ajouter dans GitHub Secrets)"
+  value       = tls_private_key.deployer.private_key_pem
+  sensitive   = true
+}

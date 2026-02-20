@@ -215,13 +215,15 @@ jobs:
           cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
 
   # ═══════════════════════════════════════════════════════════
-  # Job 5: Deploy to Production
+  # Job 5: Terraform Infrastructure
   # ═══════════════════════════════════════════════════════════
-  deploy:
-    name: Deploy to Production
+  terraform:
+    name: Terraform Apply
     runs-on: ubuntu-latest
     needs: [versioning, docker]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    outputs:
+      k3s_ip: ${{ steps.tf-output.outputs.k3s_ip }}
 
     steps:
       - name: Checkout code
@@ -235,24 +237,104 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Deploy to Kubernetes
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: ./terraform
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: ./terraform
+        run: terraform apply -auto-approve tfplan
+
+      - name: Get Terraform Outputs
+        id: tf-output
+        working-directory: ./terraform
+        run: |
+          echo "k3s_ip=$(terraform output -raw k3s_public_ip)" >> $GITHUB_OUTPUT
+
+          # Sauvegarder la clé SSH privée pour le job deploy
+          terraform output -raw ssh_private_key > ../ssh_key.pem
+          chmod 600 ../ssh_key.pem
+
+      - name: Upload SSH Key as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssh-key
+          path: ssh_key.pem
+          retention-days: 1
+
+      - name: Wait for K3s to be ready
+        run: |
+          echo "⏳ Attente que K3s soit prêt (30s)..."
+          sleep 30
+
+  # ═══════════════════════════════════════════════════════════
+  # Job 6: Deploy to Kubernetes
+  # ═══════════════════════════════════════════════════════════
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: [versioning, docker, terraform]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download SSH Key
+        uses: actions/download-artifact@v4
+        with:
+          name: ssh-key
+
+      - name: Setup SSH & Get Kubeconfig
         run: |
           # Installer kubectl
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
 
-          # Récupérer l'IP du serveur K3s depuis Terraform outputs
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig.yaml
-          export KUBECONFIG=kubeconfig.yaml
+          # Configurer SSH
+          mkdir -p ~/.ssh
+          mv ssh_key.pem ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ needs.terraform.outputs.k3s_ip }} >> ~/.ssh/known_hosts
 
-          # Mettre à jour l'image dans le deployment
+          # Télécharger le kubeconfig
+          scp -i ~/.ssh/id_rsa ec2-user@${{ needs.terraform.outputs.k3s_ip }}:/home/ec2-user/.kube/config kubeconfig.yaml
+
+          # Remplacer localhost par l'IP publique
+          sed -i "s/127.0.0.1/${{ needs.terraform.outputs.k3s_ip }}/g" kubeconfig.yaml
+
+          export KUBECONFIG=$(pwd)/kubeconfig.yaml
+          echo "KUBECONFIG=$(pwd)/kubeconfig.yaml" >> $GITHUB_ENV
+
+          # Tester la connexion
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Deploy to Kubernetes
+        run: |
+          # Créer le namespace si nécessaire
+          kubectl create namespace auth-service --dry-run=client -o yaml | kubectl apply -f -
+
+          # Appliquer les manifests Kubernetes
+          kubectl apply -f k8s/ -n auth-service
+
+          # Mettre à jour l'image avec la nouvelle version
           kubectl set image deployment/auth-service \
             auth-service=${{ env.IMAGE_NAME }}:${{ needs.versioning.outputs.version }} \
-            -n production
+            -n auth-service
 
           # Attendre le rollout
-          kubectl rollout status deployment/auth-service -n production
+          kubectl rollout status deployment/auth-service -n auth-service --timeout=5m
 
           echo "✅ Déploiement réussi!"
 
