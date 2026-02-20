@@ -1,0 +1,17 @@
+# Environment variables
+.env
+
+# Build outputs
+*.exe
+*.out
+
+# Test coverage
+*.cover
+coverage.out
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
