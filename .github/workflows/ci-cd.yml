@@ -299,8 +299,8 @@ jobs:
       - name: Wait for K3s to be ready
         if: steps.deploy.outputs.TERRAFORM_CHANGES == 'true'
         run: |
-          echo "⏳ Infrastructure modifiée - Attente que K3s soit prêt (30s)..."
-          sleep 30
+          echo "⏳ Infrastructure modifiée - Attente que K3s soit prêt (90s)..."
+          sleep 90
 
       - name: Summary
         run: |
@@ -353,24 +353,65 @@ jobs:
           mkdir -p ~/.ssh
           mv ssh_key.pem ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-
-          echo "📡 Connexion à K3s sur ${K3S_IP}..."
           ssh-keyscan -H "${K3S_IP}" >> ~/.ssh/known_hosts
 
+          # Attendre que le serveur soit accessible via SSH
+          echo "📡 Vérification de l'accessibilité SSH de ${K3S_IP}..."
+          MAX_SSH_RETRIES=10
+          SSH_RETRY=0
+          while [ $SSH_RETRY -lt $MAX_SSH_RETRIES ]; do
+            if ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 -o StrictHostKeyChecking=no ec2-user@${K3S_IP} "echo 'SSH OK'" &>/dev/null; then
+              echo "✅ Serveur SSH accessible"
+              break
+            else
+              SSH_RETRY=$((SSH_RETRY + 1))
+              if [ $SSH_RETRY -lt $MAX_SSH_RETRIES ]; then
+                echo "⏳ SSH pas encore prêt (tentative $SSH_RETRY/$MAX_SSH_RETRIES), attente 15s..."
+                sleep 15
+              else
+                echo "❌ Impossible de se connecter en SSH après $MAX_SSH_RETRIES tentatives"
+                exit 1
+              fi
+            fi
+          done
+
+          # Attendre que le fichier kubeconfig existe
+          echo "📁 Vérification de l'existence du kubeconfig..."
+          MAX_FILE_RETRIES=10
+          FILE_RETRY=0
+          while [ $FILE_RETRY -lt $MAX_FILE_RETRIES ]; do
+            if ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 ec2-user@${K3S_IP} "test -f /home/ec2-user/.kube/config"; then
+              echo "✅ Fichier kubeconfig existe"
+              break
+            else
+              FILE_RETRY=$((FILE_RETRY + 1))
+              if [ $FILE_RETRY -lt $MAX_FILE_RETRIES ]; then
+                echo "⏳ Kubeconfig pas encore créé (tentative $FILE_RETRY/$MAX_FILE_RETRIES), attente 15s..."
+                sleep 15
+              else
+                echo "❌ Fichier kubeconfig introuvable après $MAX_FILE_RETRIES tentatives"
+                echo "Contenu du répertoire .kube:"
+                ssh -i ~/.ssh/id_rsa ec2-user@${K3S_IP} "ls -la /home/ec2-user/.kube/ || echo 'Répertoire .kube introuvable'"
+                exit 1
+              fi
+            fi
+          done
+
           # Télécharger le kubeconfig avec retry
-          MAX_RETRIES=3
-          RETRY_COUNT=0
-          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            if scp -i ~/.ssh/id_rsa -o ConnectTimeout=10 ec2-user@${K3S_IP}:/home/ec2-user/.kube/config kubeconfig.yaml; then
+          echo "📥 Téléchargement du kubeconfig..."
+          MAX_SCP_RETRIES=5
+          SCP_RETRY=0
+          while [ $SCP_RETRY -lt $MAX_SCP_RETRIES ]; do
+            if scp -i ~/.ssh/id_rsa -o ConnectTimeout=30 ec2-user@${K3S_IP}:/home/ec2-user/.kube/config kubeconfig.yaml; then
               echo "✅ Kubeconfig récupéré"
               break
             else
-              RETRY_COUNT=$((RETRY_COUNT + 1))
-              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-                echo "⚠️ Tentative $RETRY_COUNT échouée, nouvelle tentative dans 10s..."
+              SCP_RETRY=$((SCP_RETRY + 1))
+              if [ $SCP_RETRY -lt $MAX_SCP_RETRIES ]; then
+                echo "⚠️ Tentative SCP $SCP_RETRY échouée, nouvelle tentative dans 10s..."
                 sleep 10
               else
-                echo "❌ Impossible de récupérer le kubeconfig après $MAX_RETRIES tentatives"
+                echo "❌ Impossible de récupérer le kubeconfig après $MAX_SCP_RETRIES tentatives"
                 exit 1
               fi
             fi
@@ -382,10 +423,27 @@ jobs:
           export KUBECONFIG=$(pwd)/kubeconfig.yaml
           echo "KUBECONFIG=$(pwd)/kubeconfig.yaml" >> $GITHUB_ENV
 
-          # Tester la connexion
+          # Tester la connexion avec retry
           echo "🔍 Test de connexion au cluster..."
-          kubectl cluster-info
-          kubectl get nodes
+          MAX_KUBECTL_RETRIES=5
+          KUBECTL_RETRY=0
+          while [ $KUBECTL_RETRY -lt $MAX_KUBECTL_RETRIES ]; do
+            if kubectl get nodes &>/dev/null; then
+              echo "✅ Connexion au cluster réussie"
+              kubectl cluster-info
+              kubectl get nodes
+              break
+            else
+              KUBECTL_RETRY=$((KUBECTL_RETRY + 1))
+              if [ $KUBECTL_RETRY -lt $MAX_KUBECTL_RETRIES ]; then
+                echo "⏳ Cluster pas encore prêt (tentative $KUBECTL_RETRY/$MAX_KUBECTL_RETRIES), attente 10s..."
+                sleep 10
+              else
+                echo "❌ Impossible de se connecter au cluster après $MAX_KUBECTL_RETRIES tentatives"
+                exit 1
+              fi
+            fi
+          done
 
       - name: Deploy to Kubernetes
         run: |
