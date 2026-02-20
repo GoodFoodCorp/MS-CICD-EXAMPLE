@@ -109,7 +109,7 @@ terraform init -reconfigure
 # Étape 4 : Importer les ressources existantes si nécessaire
 # ═══════════════════════════════════════════════════════════
 echo ""
-echo "🔍 Vérification des ressources existantes..."
+echo "🔍 Vérification et import des ressources existantes..."
 
 import_if_exists() {
     local resource_type=$1
@@ -123,19 +123,64 @@ import_if_exists() {
     fi
     
     # Tenter l'import
-    echo "   ➜ Import de ${resource_type}.${resource_name}..."
-    if terraform import "${resource_type}.${resource_name}" "${aws_id}" 2>/dev/null; then
+    echo "   ➜ Import de ${resource_type}.${resource_name} (${aws_id})..."
+    if terraform import -input=false "${resource_type}.${resource_name}" "${aws_id}" 2>&1 | tee /tmp/tf-import.log; then
         echo "   ✅ Import réussi"
         return 0
     else
-        echo "   ℹ️  Ressource n'existe pas dans AWS (sera créée)"
+        if grep -q "Cannot import non-existent" /tmp/tf-import.log || grep -q "does not exist" /tmp/tf-import.log; then
+            echo "   ℹ️  Ressource n'existe pas dans AWS (sera créée)"
+        else
+            echo "   ⚠️  Import échoué (voir logs)"
+        fi
         return 1
     fi
 }
 
 # Importer les ressources clés
-import_if_exists "aws_key_pair" "deployer" "${PROJECT_NAME}-key" || true
-import_if_exists "aws_db_subnet_group" "main" "${PROJECT_NAME}-db-subnet-group" || true
+echo ""
+echo "   🔑 Vérification Key Pair..."
+if aws ec2 describe-key-pairs --region "${REGION}" --key-names "${PROJECT_NAME}-key" &>/dev/null; then
+    echo "      ➜ Key pair existe dans AWS, import..."
+    import_if_exists "aws_key_pair" "deployer" "${PROJECT_NAME}-key" || true
+else
+    echo "      ℹ️  Key pair n'existe pas (sera créée)"
+fi
+
+echo ""
+echo "   📊 Vérification DB Subnet Group..."
+if aws rds describe-db-subnet-groups --region "${REGION}" --db-subnet-group-name "${PROJECT_NAME}-db-subnet-group" &>/dev/null; then
+    echo "      ➜ DB Subnet Group existe dans AWS, import..."
+    import_if_exists "aws_db_subnet_group" "main" "${PROJECT_NAME}-db-subnet-group" || true
+else
+    echo "      ℹ️  DB Subnet Group n'existe pas (sera créé)"
+fi
+
+# Vérifier les VPCs existants du projet
+echo ""
+echo "   🌐 Vérification VPCs..."
+VPC_IDS=$(aws ec2 describe-vpcs --region "${REGION}" \
+    --filters "Name=tag:Project,Values=${PROJECT_NAME}" \
+    --query 'Vpcs[*].VpcId' \
+    --output text 2>/dev/null)
+
+if [ -n "$VPC_IDS" ]; then
+    VPC_COUNT=$(echo "$VPC_IDS" | wc -w | tr -d ' ')
+    echo "      ⚠️  ${VPC_COUNT} VPC(s) trouvé(s) avec le tag Project=${PROJECT_NAME}"
+    echo "      IDs: ${VPC_IDS}"
+    
+    # Vérifier la limite totale
+    TOTAL_VPCS=$(aws ec2 describe-vpcs --region "${REGION}" --query 'Vpcs | length(@)' --output text)
+    if [ "$TOTAL_VPCS" -ge 5 ]; then
+        echo ""
+        echo "      ❌ ATTENTION : Limite de VPCs atteinte (${TOTAL_VPCS}/5)"
+        echo "      Terraform ne pourra pas créer de nouveau VPC."
+        echo "      Supprimez les VPCs non utilisés ou importez un VPC existant."
+        echo ""
+    fi
+else
+    echo "      ℹ️  Aucun VPC du projet trouvé"
+fi
 
 # ═══════════════════════════════════════════════════════════
 # Étape 5 : Planifier les changements

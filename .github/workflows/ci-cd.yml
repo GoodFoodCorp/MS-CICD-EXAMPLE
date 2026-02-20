@@ -244,6 +244,14 @@ jobs:
           terraform_version: 1.6.0
           terraform_wrapper: false
 
+      - name: Pre-deployment Cleanup
+        working-directory: ./terraform
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          chmod +x pre-deploy-cleanup.sh
+          ./pre-deploy-cleanup.sh || echo "⚠️ Nettoyage échoué, on continue quand même..."
+
       - name: Smart Terraform Deployment
         id: deploy
         working-directory: ./terraform
