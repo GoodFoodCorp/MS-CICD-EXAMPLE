@@ -447,6 +447,9 @@ jobs:
           export KUBECONFIG=$(pwd)/kubeconfig.yaml
           echo "KUBECONFIG=$(pwd)/kubeconfig.yaml" >> $GITHUB_ENV
 
+          # Désactiver la vérification TLS (le certificat K3s est pour 127.0.0.1)
+          kubectl config set-cluster default --insecure-skip-tls-verify=true
+
           # Tester la connexion avec retry
           echo "🔍 Test de connexion au cluster..."
           MAX_KUBECTL_RETRIES=5

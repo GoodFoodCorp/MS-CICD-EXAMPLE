@@ -30,9 +30,14 @@ yum install -y curl --allowerasing || echo "⚠️ curl déjà installé ou curl
 # ═══════════════════════════════════════════════════════════
 
 echo "🐳 Installation de K3s..."
+# Récupérer l'IP publique pour le certificat TLS
+PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+echo "📍 IP publique: $PUBLIC_IP"
+
 curl -sfL https://get.k3s.io | sh -s - \
   --write-kubeconfig-mode 644 \
   --disable traefik \
+  --tls-san "$PUBLIC_IP" \
   --node-name k3s-master
 
 # Attendre que K3s soit prêt
