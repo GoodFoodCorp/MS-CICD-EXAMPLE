@@ -14,7 +14,6 @@ FROM gcr.io/distroless/static-debian11
 WORKDIR /
 
 COPY --from=builder /app/auth-service /auth-service
-COPY --from=builder /app/.env . 
 COPY --from=builder /app/docs /docs
 
 USER nonroot:nonroot
