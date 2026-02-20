@@ -85,7 +85,7 @@ func main() {
 
 	// Swagger / Scalar documentation
 	r.GET("/api-docs/swagger.json", func(c *gin.Context) {
-		c.File("docs/swagger.json")
+		c.File("/docs/swagger.json")
 	})
 	r.GET("/scalar", func(c *gin.Context) {
 		c.Header("Content-Type", "text/html")
