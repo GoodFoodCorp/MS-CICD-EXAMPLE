@@ -1,4 +1,13 @@
 # ═══════════════════════════════════════════════════════════
+# Data Sources
+# ═══════════════════════════════════════════════════════════
+
+# Récupérer les zones de disponibilité disponibles dans la région
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+# ═══════════════════════════════════════════════════════════
 # VPC et Configuration Réseau
 # ═══════════════════════════════════════════════════════════
 
@@ -16,7 +25,7 @@ resource "aws_vpc" "main" {
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.public_subnets[0]
-  availability_zone       = var.availability_zones[0]
+  availability_zone       = data.aws_availability_zones.available.names[0]
   map_public_ip_on_launch = true
 
   tags = {
@@ -29,7 +38,7 @@ resource "aws_subnet" "private" {
   count             = 2
   vpc_id            = aws_vpc.main.id
   cidr_block        = var.private_subnets[count.index]
-  availability_zone = var.availability_zones[count.index]
+  availability_zone = data.aws_availability_zones.available.names[count.index]
 
   tags = {
     Name = "${var.project_name}-private-subnet-${count.index + 1}"
