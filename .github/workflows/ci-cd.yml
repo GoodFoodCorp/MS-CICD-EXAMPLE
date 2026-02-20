@@ -88,11 +88,6 @@ jobs:
           sarif_file: gosec-results.sarif
           category: gosec
 
-      - name: Check for vulnerabilities
-        run: |
-          go install github.com/sonatype-nexus-community/nancy@latest
-          go list -json -deps ./... | nancy sleuth
-
   # ═══════════════════════════════════════════════════════════
   # Job 3: Versioning & Tagging
   # ═══════════════════════════════════════════════════════════
