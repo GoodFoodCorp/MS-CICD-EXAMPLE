@@ -44,9 +44,34 @@ kubectl get nodes
 # 3. Configuration de kubectl pour l'utilisateur ec2-user
 # ═══════════════════════════════════════════════════════════
 
+echo "📝 Configuration du kubeconfig pour ec2-user..."
+
+# Attendre que le fichier kubeconfig de K3s soit créé
+KUBECONFIG_SOURCE="/etc/rancher/k3s/k3s.yaml"
+echo "⏳ Attente de la création du kubeconfig K3s..."
+RETRIES=0
+MAX_RETRIES=30
+while [ ! -f "$KUBECONFIG_SOURCE" ] && [ $RETRIES -lt $MAX_RETRIES ]; do
+  echo "Tentative $((RETRIES+1))/$MAX_RETRIES - Kubeconfig pas encore disponible..."
+  sleep 5
+  RETRIES=$((RETRIES+1))
+done
+
+if [ ! -f "$KUBECONFIG_SOURCE" ]; then
+  echo "❌ ERREUR: Kubeconfig K3s introuvable après $MAX_RETRIES tentatives"
+  exit 1
+fi
+
+echo "✅ Kubeconfig K3s trouvé"
+
+# Créer le répertoire et copier le kubeconfig
 mkdir -p /home/ec2-user/.kube
-cp /etc/rancher/k3s/k3s.yaml /home/ec2-user/.kube/config
+cp "$KUBECONFIG_SOURCE" /home/ec2-user/.kube/config
+chmod 644 /home/ec2-user/.kube/config
 chown -R ec2-user:ec2-user /home/ec2-user/.kube
+
+echo "✅ Kubeconfig configuré pour ec2-user"
+ls -la /home/ec2-user/.kube/
 
 # ═══════════════════════════════════════════════════════════
 # 4. Création du namespace production
@@ -348,3 +373,9 @@ echo "Date: $(date)"
 echo "IP publique: $PUBLIC_IP"
 echo "Port: ${app_port}"
 echo "=================================="
+
+# Créer un fichier flag pour indiquer que l'installation est terminée
+touch /home/ec2-user/.k3s-ready
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /home/ec2-user/.k3s-ready
+chown ec2-user:ec2-user /home/ec2-user/.k3s-ready
+echo "✅ Fichier flag créé: /home/ec2-user/.k3s-ready"

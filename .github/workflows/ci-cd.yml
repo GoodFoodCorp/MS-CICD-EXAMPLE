@@ -375,9 +375,31 @@ jobs:
             fi
           done
 
+          # Attendre que le script user-data.sh soit terminé (flag .k3s-ready)
+          echo "⏳ Attente de la fin du script d'initialisation..."
+          MAX_INIT_RETRIES=30
+          INIT_RETRY=0
+          while [ $INIT_RETRY -lt $MAX_INIT_RETRIES ]; do
+            if ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 ec2-user@${K3S_IP} "test -f /home/ec2-user/.k3s-ready"; then
+              echo "✅ Script d'initialisation terminé"
+              break
+            else
+              INIT_RETRY=$((INIT_RETRY + 1))
+              if [ $INIT_RETRY -lt $MAX_INIT_RETRIES ]; then
+                echo "⏳ Initialisation en cours (tentative $INIT_RETRY/$MAX_INIT_RETRIES), attente 20s..."
+                sleep 20
+              else
+                echo "❌ Timeout: initialisation non terminée après $MAX_INIT_RETRIES tentatives"
+                echo "📋 Vérification des logs d'initialisation:"
+                ssh -i ~/.ssh/id_rsa ec2-user@${K3S_IP} "sudo tail -50 /var/log/user-data.log" || true
+                exit 1
+              fi
+            fi
+          done
+
           # Attendre que le fichier kubeconfig existe
           echo "📁 Vérification de l'existence du kubeconfig..."
-          MAX_FILE_RETRIES=10
+          MAX_FILE_RETRIES=5
           FILE_RETRY=0
           while [ $FILE_RETRY -lt $MAX_FILE_RETRIES ]; do
             if ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 ec2-user@${K3S_IP} "test -f /home/ec2-user/.kube/config"; then
@@ -386,12 +408,14 @@ jobs:
             else
               FILE_RETRY=$((FILE_RETRY + 1))
               if [ $FILE_RETRY -lt $MAX_FILE_RETRIES ]; then
-                echo "⏳ Kubeconfig pas encore créé (tentative $FILE_RETRY/$MAX_FILE_RETRIES), attente 15s..."
-                sleep 15
+                echo "⏳ Kubeconfig pas encore créé (tentative $FILE_RETRY/$MAX_FILE_RETRIES), attente 10s..."
+                sleep 10
               else
                 echo "❌ Fichier kubeconfig introuvable après $MAX_FILE_RETRIES tentatives"
                 echo "Contenu du répertoire .kube:"
                 ssh -i ~/.ssh/id_rsa ec2-user@${K3S_IP} "ls -la /home/ec2-user/.kube/ || echo 'Répertoire .kube introuvable'"
+                echo "📋 Logs K3s:"
+                ssh -i ~/.ssh/id_rsa ec2-user@${K3S_IP} "sudo tail -50 /var/log/user-data.log" || true
                 exit 1
               fi
             fi
