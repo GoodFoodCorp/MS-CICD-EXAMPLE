@@ -8,15 +8,9 @@ terraform {
     }
   }
 
-  # Backend S3 pour stocker l'état Terraform
-  # Exécutez ./init-backend.sh avant d'activer cette configuration
-  backend "s3" {
-    bucket         = "auth-service-terraform-state-prod"
-    key            = "terraform.tfstate"
-    region         = "us-east-1"
-    encrypt        = true
-    dynamodb_table = "auth-service-terraform-lock-prod"
-  }
+  # Backend S3 configuré dynamiquement par ci-deploy.sh
+  # Le fichier backend-override.tf sera généré automatiquement
+  # avec un nom de bucket unique incluant l'ID du compte AWS
 }
 
 provider "aws" {

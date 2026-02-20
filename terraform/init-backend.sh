@@ -8,11 +8,16 @@ set -e
 REGION="${AWS_REGION:-us-east-1}"
 PROJECT_NAME="auth-service"
 ENVIRONMENT="prod"
-BUCKET_NAME="${PROJECT_NAME}-terraform-state-${ENVIRONMENT}"
+
+# Récupérer l'ID du compte AWS pour rendre le bucket unique
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+BUCKET_NAME="${PROJECT_NAME}-tfstate-${ENVIRONMENT}-${AWS_ACCOUNT_ID}"
 TABLE_NAME="${PROJECT_NAME}-terraform-lock-${ENVIRONMENT}"
 
 echo "🚀 Initialisation du backend Terraform pour ${PROJECT_NAME}..."
 echo "   Région: ${REGION}"
+echo "   Compte AWS: ${AWS_ACCOUNT_ID}"
 echo "   Bucket: ${BUCKET_NAME}"
 echo "   Table DynamoDB: ${TABLE_NAME}"
 echo ""

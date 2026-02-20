@@ -14,12 +14,17 @@ set -e
 REGION="${AWS_REGION:-us-east-1}"
 PROJECT_NAME="auth-service"
 ENVIRONMENT="prod"
-BUCKET_NAME="${PROJECT_NAME}-terraform-state-${ENVIRONMENT}"
+
+# Récupérer l'ID du compte AWS pour rendre le bucket unique
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+BUCKET_NAME="${PROJECT_NAME}-tfstate-${ENVIRONMENT}-${AWS_ACCOUNT_ID}"
 TABLE_NAME="${PROJECT_NAME}-terraform-lock-${ENVIRONMENT}"
 
 echo "🚀 Initialisation du déploiement Terraform CI/CD"
 echo "   Région: ${REGION}"
 echo "   Projet: ${PROJECT_NAME}"
+echo "   Compte AWS: ${AWS_ACCOUNT_ID}"
 echo ""
 
 # ═══════════════════════════════════════════════════════════
@@ -71,14 +76,37 @@ else
 fi
 
 # ═══════════════════════════════════════════════════════════
-# Étape 2 : Initialiser Terraform
+# Étape 2 : Configurer le backend Terraform dynamiquement
+# ═══════════════════════════════════════════════════════════
+echo ""
+echo "⚙️  Configuration du backend Terraform..."
+
+cat > backend-override.tf <<EOF
+terraform {
+  backend "s3" {
+    bucket         = "${BUCKET_NAME}"
+    key            = "terraform.tfstate"
+    region         = "${REGION}"
+    encrypt        = true
+    dynamodb_table = "${TABLE_NAME}"
+  }
+}
+EOF
+
+echo "   ✅ Backend configuré avec:"
+echo "      Bucket: ${BUCKET_NAME}"
+echo "      Region: ${REGION}"
+echo "      Table: ${TABLE_NAME}"
+
+# ═══════════════════════════════════════════════════════════
+# Étape 3 : Initialiser Terraform
 # ═══════════════════════════════════════════════════════════
 echo ""
 echo "🔧 Initialisation de Terraform..."
 terraform init -reconfigure
 
 # ═══════════════════════════════════════════════════════════
-# Étape 3 : Importer les ressources existantes si nécessaire
+# Étape 4 : Importer les ressources existantes si nécessaire
 # ═══════════════════════════════════════════════════════════
 echo ""
 echo "🔍 Vérification des ressources existantes..."
@@ -110,7 +138,7 @@ import_if_exists "aws_key_pair" "deployer" "${PROJECT_NAME}-key" || true
 import_if_exists "aws_db_subnet_group" "main" "${PROJECT_NAME}-db-subnet-group" || true
 
 # ═══════════════════════════════════════════════════════════
-# Étape 4 : Planifier les changements
+# Étape 5 : Planifier les changements
 # ═══════════════════════════════════════════════════════════
 echo ""
 echo "📋 Planification des changements..."
@@ -143,7 +171,7 @@ elif [ $PLAN_EXIT_CODE -eq 1 ]; then
 fi
 
 # ═══════════════════════════════════════════════════════════
-# Étape 5 : Appliquer les changements
+# Étape 6 : Appliquer les changements
 # ═══════════════════════════════════════════════════════════
 echo ""
 echo "🚀 Application des changements..."
@@ -158,7 +186,7 @@ else
 fi
 
 # ═══════════════════════════════════════════════════════════
-# Étape 6 : Récupérer les outputs
+# Étape 7 : Récupérer les outputs
 # ═══════════════════════════════════════════════════════════
 echo ""
 echo "📤 Récupération des outputs Terraform..."
