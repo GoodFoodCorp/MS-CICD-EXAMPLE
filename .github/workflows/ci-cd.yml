@@ -248,10 +248,16 @@ jobs:
 
       - name: Terraform Plan
         working-directory: ./terraform
+        env:
+          TF_VAR_docker_username: ${{ secrets.DOCKER_USERNAME }}
+          TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
         run: terraform plan -out=tfplan
 
       - name: Terraform Apply
         working-directory: ./terraform
+        env:
+          TF_VAR_docker_username: ${{ secrets.DOCKER_USERNAME }}
+          TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
         run: terraform apply -auto-approve tfplan
 
       - name: Get Terraform Outputs
