@@ -224,3 +224,4 @@ Ce projet est sous licence MIT.
 ---
 
 **Made with ❤️ by MAALSI Team**
+# Infrastructure re-déployée avec fix curl
