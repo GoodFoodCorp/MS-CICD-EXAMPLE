@@ -92,16 +92,16 @@ echo "🔐 Création des secrets..."
 
 # Secret pour la base de données
 kubectl create secret generic db-credentials \
-  --from-literal=host=${db_endpoint} \
-  --from-literal=database=${db_name} \
-  --from-literal=username=${db_username} \
-  --from-literal=password=${db_password} \
+  --from-literal=host="${db_endpoint}" \
+  --from-literal=database="${db_name}" \
+  --from-literal=username="${db_username}" \
+  --from-literal=password="${db_password}" \
   --namespace=production \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Secret pour le webhook
 kubectl create secret generic webhook-config \
-  --from-literal=url=${webhook_url} \
+  --from-literal=url="${webhook_url}" \
   --namespace=production \
   --dry-run=client -o yaml | kubectl apply -f -
 
