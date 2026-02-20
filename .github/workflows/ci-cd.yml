@@ -475,18 +475,18 @@ jobs:
       - name: Deploy to Kubernetes
         run: |
           # Créer le namespace si nécessaire
-          kubectl create namespace auth-service --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
 
           # Appliquer les manifests Kubernetes
-          kubectl apply -f k8s/ -n auth-service
+          kubectl apply -f k8s/
 
           # Mettre à jour l'image avec la nouvelle version
           kubectl set image deployment/auth-service \
             auth-service=${{ env.IMAGE_NAME }}:${{ needs.versioning.outputs.version }} \
-            -n auth-service
+            -n production
 
           # Attendre le rollout
-          kubectl rollout status deployment/auth-service -n auth-service --timeout=5m
+          kubectl rollout status deployment/auth-service -n production --timeout=5m
 
           echo "✅ Déploiement réussi!"
 
