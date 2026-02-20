@@ -52,7 +52,7 @@ test: ## Lancer les tests
 
 test-coverage: ## Tests avec couverture détaillée
 	@echo "$(YELLOW)📊 Tests avec couverture...$(NC)"
-	@go test ./... -coverprofile=coverage.out -covermode=atomic
+	@go test ./... -coverprofile=coverage.out -covermode=count
 	@go tool cover -html=coverage.out -o coverage.html
 	@echo "$(GREEN)✅ Rapport généré: coverage.html$(NC)"
 

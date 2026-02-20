@@ -43,7 +43,7 @@ jobs:
 
       - name: Run Tests
         run: |
-          go test ./... -v -coverprofile=coverage.out -covermode=atomic
+          go test ./... -v -coverprofile=coverage.out -covermode=count
           go tool cover -func=coverage.out
 
       - name: Upload coverage to artifact
