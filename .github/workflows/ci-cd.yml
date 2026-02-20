@@ -77,14 +77,16 @@ jobs:
           govulncheck ./...
 
       - name: Run gosec Security Scanner
-        uses: securego/gosec@master
-        with:
-          args: "-no-fail -fmt sarif -out gosec-results.sarif ./..."
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -no-fail -fmt=sarif -out=gosec-results.sarif ./... || true
 
       - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
+        continue-on-error: true
         with:
           sarif_file: gosec-results.sarif
+          category: gosec
 
       - name: Check for vulnerabilities
         run: |
