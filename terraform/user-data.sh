@@ -110,6 +110,17 @@ kubectl create secret generic webhook-config \
   --namespace=production \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# Secret pour DATABASE_URL (avec URL encoding du password pour gérer les caractères spéciaux)
+# Utilisation de Python pour l'URL encoding car il est disponible sur Amazon Linux 2023
+DB_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${db_password}', safe=''))")
+DATABASE_URL="postgresql://${db_username}:$${DB_PASSWORD_ENCODED}@${db_endpoint}/${db_name}?sslmode=require"
+kubectl create secret generic database-url \
+  --from-literal=url="$DATABASE_URL" \
+  --namespace=production \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+echo "✅ Secrets créés avec succès"
+
 # ═══════════════════════════════════════════════════════════
 # 6. Attendre que RDS soit accessible
 # ═══════════════════════════════════════════════════════════
