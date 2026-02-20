@@ -473,22 +473,59 @@ jobs:
             fi
           done
 
+      - name: Verify Docker image exists
+        run: |
+          VERSION="${{ needs.versioning.outputs.version }}"
+          IMAGE="${{ env.IMAGE_NAME }}:${VERSION}"
+          
+          echo "🔍 Vérification de l'existence de l'image ${IMAGE}..."
+          
+          # Attendre que l'image soit disponible sur Docker Hub
+          MAX_RETRIES=10
+          RETRY=0
+          while [ $RETRY -lt $MAX_RETRIES ]; do
+            if docker manifest inspect ${IMAGE} &>/dev/null; then
+              echo "✅ Image ${IMAGE} trouvée sur Docker Hub"
+              break
+            else
+              RETRY=$((RETRY + 1))
+              if [ $RETRY -lt $MAX_RETRIES ]; then
+                echo "⏳ Image pas encore disponible (tentative $RETRY/$MAX_RETRIES), attente 10s..."
+                sleep 10
+              else
+                echo "❌ Image ${IMAGE} introuvable après $MAX_RETRIES tentatives"
+                exit 1
+              fi
+            fi
+          done
+
       - name: Deploy to Kubernetes
         run: |
+          VERSION="${{ needs.versioning.outputs.version }}"
+          IMAGE="${{ env.IMAGE_NAME }}:${VERSION}"
+          
           # Créer le namespace si nécessaire
           kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
 
-          # Appliquer les manifests Kubernetes
-          kubectl apply -f k8s/
+          # Appliquer les manifests (service, hpa, etc) mais PAS le deployment
+          kubectl apply -f k8s/deployment.yaml --dry-run=client -o yaml | \
+            sed "s|image: .*|image: ${IMAGE}|" | \
+            kubectl apply -f -
+          
+          # Appliquer les autres ressources
+          for file in k8s/*.yaml; do
+            if [ "$file" != "k8s/deployment.yaml" ]; then
+              kubectl apply -f "$file"
+            fi
+          done
 
-          # Mettre à jour l'image avec la nouvelle version
-          kubectl set image deployment/auth-service \
-            auth-service=${{ env.IMAGE_NAME }}:${{ needs.versioning.outputs.version }} \
-            -n production
+          # Attendre le rollout avec un timeout plus long
+          echo "⏳ Attente du rollout pour la version ${VERSION}..."
+          kubectl rollout status deployment/auth-service -n production --timeout=10m
 
-          # Attendre le rollout
-          kubectl rollout status deployment/auth-service -n production --timeout=5m
-
+          # Vérifier que les pods sont bien démarrés
+          kubectl get pods -n production -l app=auth-service
+          
           echo "✅ Déploiement réussi!"
 
       - name: Send notification
