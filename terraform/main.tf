@@ -185,6 +185,10 @@ resource "aws_key_pair" "deployer" {
   tags = {
     Name = "${var.project_name}-key"
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # ═══════════════════════════════════════════════════════════
@@ -215,7 +219,7 @@ resource "aws_db_instance" "postgres" {
   identifier        = "${var.project_name}-postgres"
   allocated_storage = var.db_allocated_storage
   engine            = "postgres"
-  engine_version    = "15.5"
+  engine_version    = "17"
   instance_class    = var.db_instance_class
   db_name           = var.db_name
 
