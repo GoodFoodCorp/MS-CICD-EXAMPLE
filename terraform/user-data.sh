@@ -18,8 +18,12 @@ echo "=================================="
 # ═══════════════════════════════════════════════════════════
 
 echo "📦 Installation des dépendances..."
-yum update -y
-yum install -y curl wget git jq
+# Note: Amazon Linux 2023 a curl-minimal par défaut qui peut causer des conflits
+# On utilise --allowerasing pour résoudre les conflits automatiquement
+yum update -y --skip-broken
+yum install -y wget git jq --skip-broken
+# Installer curl en permettant l'effacement de curl-minimal si nécessaire
+yum install -y curl --allowerasing || echo "⚠️ curl déjà installé ou curl-minimal présent"
 
 # ═══════════════════════════════════════════════════════════
 # 2. Installation de K3s (Kubernetes léger)
