@@ -89,11 +89,7 @@ variable "db_username" {
   sensitive   = true
 }
 
-variable "db_password" {
-  description = "Password pour la base de données"
-  type        = string
-  sensitive   = true
-}
+# Note: Le mot de passe est généré automatiquement via random_password dans main.tf
 
 # ═══════════════════════════════════════════════════════════
 # Application Configuration

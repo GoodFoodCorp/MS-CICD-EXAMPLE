@@ -179,6 +179,17 @@ resource "aws_key_pair" "deployer" {
 }
 
 # ═══════════════════════════════════════════════════════════
+# Mot de passe base de données (généré automatiquement)
+# ═══════════════════════════════════════════════════════════
+
+resource "random_password" "db_password" {
+  length  = 32
+  special = true
+  # Éviter certains caractères spéciaux qui peuvent poser problème dans les URLs
+  override_special = "!#$%&*()-_=+[]{}:?"
+}
+
+# ═══════════════════════════════════════════════════════════
 # Base de données RDS PostgreSQL
 # ═══════════════════════════════════════════════════════════
 
@@ -200,7 +211,7 @@ resource "aws_db_instance" "postgres" {
   db_name           = var.db_name
 
   username = var.db_username
-  password = var.db_password
+  password = random_password.db_password.result
 
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
@@ -253,7 +264,7 @@ resource "aws_instance" "k3s_server" {
     db_endpoint      = aws_db_instance.postgres.endpoint
     db_name          = var.db_name
     db_username      = var.db_username
-    db_password      = var.db_password
+    db_password      = random_password.db_password.result
     docker_username  = var.docker_username
     app_port         = var.app_port
     webhook_url      = var.webhook_url

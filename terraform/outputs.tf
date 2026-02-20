@@ -33,6 +33,12 @@ output "rds_username" {
   sensitive   = true
 }
 
+output "rds_password" {
+  description = "Mot de passe de la base de données (généré automatiquement)"
+  value       = random_password.db_password.result
+  sensitive   = true
+}
+
 # ═══════════════════════════════════════════════════════════
 # Serveur K3s
 # ═══════════════════════════════════════════════════════════
