@@ -17,9 +17,7 @@ ENVIRONMENT="prod"
 
 # Récupérer l'ID du compte AWS pour rendre le bucket unique
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-
 BUCKET_NAME="${PROJECT_NAME}-tfstate-${ENVIRONMENT}-${AWS_ACCOUNT_ID}"
-TABLE_NAME="${PROJECT_NAME}-terraform-lock-${ENVIRONMENT}"
 
 echo "🚀 Initialisation du déploiement Terraform CI/CD"
 echo "   Région: ${REGION}"
@@ -28,17 +26,18 @@ echo "   Compte AWS: ${AWS_ACCOUNT_ID}"
 echo ""
 
 # ═══════════════════════════════════════════════════════════
-# Étape 1 : Vérifier/Créer le backend S3
+# Étape 1 : Vérifier/Créer le backend S3 (sans DynamoDB)
 # ═══════════════════════════════════════════════════════════
 echo "📦 Vérification du backend S3..."
 
 if ! aws s3 ls "s3://${BUCKET_NAME}" 2>/dev/null; then
     echo "   ➜ Création du bucket S3 ${BUCKET_NAME}..."
-    aws s3api create-bucket --bucket "${BUCKET_NAME}" --region "${REGION}"
+    aws s3api create-bucket --bucket "${BUCKET_NAME}" --region "${REGION}" 2>/dev/null
     
+    echo "   ➜ Configuration du bucket..."
     aws s3api put-bucket-versioning \
         --bucket "${BUCKET_NAME}" \
-        --versioning-configuration Status=Enabled
+        --versioning-configuration Status=Enabled 2>/dev/null
     
     aws s3api put-bucket-encryption \
         --bucket "${BUCKET_NAME}" \
@@ -48,35 +47,20 @@ if ! aws s3 ls "s3://${BUCKET_NAME}" 2>/dev/null; then
                     "SSEAlgorithm": "AES256"
                 }
             }]
-        }'
+        }' 2>/dev/null
     
     aws s3api put-public-access-block \
         --bucket "${BUCKET_NAME}" \
         --public-access-block-configuration \
-        BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+        BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true 2>/dev/null
     
-    echo "   ✅ Bucket S3 créé"
+    echo "   ✅ Bucket S3 créé et configuré"
 else
     echo "   ✅ Bucket S3 existe déjà"
 fi
 
-if ! aws dynamodb describe-table --table-name "${TABLE_NAME}" --region "${REGION}" 2>/dev/null; then
-    echo "   ➜ Création de la table DynamoDB ${TABLE_NAME}..."
-    aws dynamodb create-table \
-        --table-name "${TABLE_NAME}" \
-        --attribute-definitions AttributeName=LockID,AttributeType=S \
-        --key-schema AttributeName=LockID,KeyType=HASH \
-        --billing-mode PAY_PER_REQUEST \
-        --region "${REGION}"
-    
-    aws dynamodb wait table-exists --table-name "${TABLE_NAME}" --region "${REGION}"
-    echo "   ✅ Table DynamoDB créée"
-else
-    echo "   ✅ Table DynamoDB existe déjà"
-fi
-
 # ═══════════════════════════════════════════════════════════
-# Étape 2 : Configurer le backend Terraform dynamiquement
+# Étape 2 : Configurer le backend Terraform (S3 uniquement)
 # ═══════════════════════════════════════════════════════════
 echo ""
 echo "⚙️  Configuration du backend Terraform..."
@@ -84,19 +68,17 @@ echo "⚙️  Configuration du backend Terraform..."
 cat > backend-override.tf <<EOF
 terraform {
   backend "s3" {
-    bucket         = "${BUCKET_NAME}"
-    key            = "terraform.tfstate"
-    region         = "${REGION}"
-    encrypt        = true
-    dynamodb_table = "${TABLE_NAME}"
+    bucket  = "${BUCKET_NAME}"
+    key     = "terraform.tfstate"
+    region  = "${REGION}"
+    encrypt = true
   }
 }
 EOF
 
-echo "   ✅ Backend configuré avec:"
+echo "   ✅ Backend configuré:"
 echo "      Bucket: ${BUCKET_NAME}"
 echo "      Region: ${REGION}"
-echo "      Table: ${TABLE_NAME}"
 
 # ═══════════════════════════════════════════════════════════
 # Étape 3 : Initialiser Terraform
