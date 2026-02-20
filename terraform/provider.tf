@@ -8,15 +8,15 @@ terraform {
     }
   }
 
-  # Backend S3 pour stocker le state (optionnel mais recommandé)
-  # Décommenter après avoir créé le bucket
-  # backend "s3" {
-  #   bucket         = "auth-service-terraform-state"
-  #   key            = "prod/terraform.tfstate"
-  #   region         = "eu-west-3"
-  #   encrypt        = true
-  #   dynamodb_table = "terraform-state-lock"
-  # }
+  # Backend S3 pour stocker l'état Terraform
+  # Exécutez ./init-backend.sh avant d'activer cette configuration
+  backend "s3" {
+    bucket         = "auth-service-terraform-state-prod"
+    key            = "terraform.tfstate"
+    region         = "us-east-1"
+    encrypt        = true
+    dynamodb_table = "auth-service-terraform-lock-prod"
+  }
 }
 
 provider "aws" {

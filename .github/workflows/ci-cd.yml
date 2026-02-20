@@ -215,7 +215,7 @@ jobs:
           cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
 
   # ═══════════════════════════════════════════════════════════
-  # Job 5: Terraform Infrastructure
+  # Job 5: Terraform Infrastructure (Intelligent)
   # ═══════════════════════════════════════════════════════════
   terraform:
     name: Terraform Apply
@@ -223,7 +223,8 @@ jobs:
     needs: [versioning, docker]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     outputs:
-      k3s_ip: ${{ steps.tf-output.outputs.k3s_ip }}
+      k3s_ip: ${{ steps.deploy.outputs.K3S_IP }}
+      terraform_changes: ${{ steps.deploy.outputs.TERRAFORM_CHANGES }}
 
     steps:
       - name: Checkout code
@@ -241,34 +242,44 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.6.0
+          terraform_wrapper: false
 
-      - name: Terraform Init
-        working-directory: ./terraform
-        run: terraform init
-
-      - name: Terraform Plan
+      - name: Smart Terraform Deployment
+        id: deploy
         working-directory: ./terraform
         env:
           TF_VAR_docker_username: ${{ secrets.DOCKER_USERNAME }}
           TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
-        run: terraform plan -out=tfplan
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          chmod +x ci-deploy.sh
+          ./ci-deploy.sh
 
-      - name: Terraform Apply
-        working-directory: ./terraform
-        env:
-          TF_VAR_docker_username: ${{ secrets.DOCKER_USERNAME }}
-          TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
-        run: terraform apply -auto-approve tfplan
-
-      - name: Get Terraform Outputs
-        id: tf-output
+      - name: Get K3s IP (fallback)
+        id: get-ip
+        if: steps.deploy.outputs.K3S_IP == ''
         working-directory: ./terraform
         run: |
-          echo "k3s_ip=$(terraform output -raw k3s_public_ip)" >> $GITHUB_OUTPUT
+          # Si le script n'a pas trouvé l'IP, chercher dans l'état
+          if terraform output k3s_public_ip &>/dev/null; then
+            K3S_IP=$(terraform output -raw k3s_public_ip)
+            echo "K3S_IP=${K3S_IP}" >> $GITHUB_OUTPUT
+            echo "✅ IP K3s récupérée: ${K3S_IP}"
+          else
+            echo "⚠️  Impossible de récupérer l'IP K3s"
+            exit 1
+          fi
 
-          # Sauvegarder la clé SSH privée pour le job deploy
-          terraform output -raw ssh_private_key > ../ssh_key.pem
-          chmod 600 ../ssh_key.pem
+      - name: Prepare SSH Key
+        run: |
+          cd terraform
+          if [ -f ../ssh_key.pem ]; then
+            echo "✅ Clé SSH déjà préparée"
+          else
+            terraform output -raw ssh_private_key > ../ssh_key.pem
+            chmod 600 ../ssh_key.pem
+            echo "✅ Clé SSH extraite de l'état"
+          fi
 
       - name: Upload SSH Key as artifact
         uses: actions/upload-artifact@v4
@@ -278,9 +289,22 @@ jobs:
           retention-days: 1
 
       - name: Wait for K3s to be ready
+        if: steps.deploy.outputs.TERRAFORM_CHANGES == 'true'
         run: |
-          echo "⏳ Attente que K3s soit prêt (30s)..."
+          echo "⏳ Infrastructure modifiée - Attente que K3s soit prêt (30s)..."
           sleep 30
+
+      - name: Summary
+        run: |
+          echo "📊 Résumé Terraform" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.deploy.outputs.TERRAFORM_CHANGES }}" = "true" ]; then
+            echo "✅ Infrastructure mise à jour" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "ℹ️ Infrastructure déjà à jour - Aucun changement" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🖥️ K3s IP: ${{ steps.deploy.outputs.K3S_IP || steps.get-ip.outputs.K3S_IP }}" >> $GITHUB_STEP_SUMMARY
 
   # ═══════════════════════════════════════════════════════════
   # Job 6: Deploy to Kubernetes
@@ -300,7 +324,17 @@ jobs:
         with:
           name: ssh-key
 
+      - name: Set K3s IP
+        id: k3s-ip
+        run: |
+          # Récupérer l'IP depuis les outputs (avec fallback si besoin)
+          K3S_IP="${{ needs.terraform.outputs.k3s_ip }}"
+          echo "K3S_IP=${K3S_IP}" >> $GITHUB_OUTPUT
+          echo "🖥️ Utilisation de l'IP K3s: ${K3S_IP}"
+
       - name: Setup SSH & Get Kubeconfig
+        env:
+          K3S_IP: ${{ steps.k3s-ip.outputs.K3S_IP }}
         run: |
           # Installer kubectl
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -311,18 +345,37 @@ jobs:
           mkdir -p ~/.ssh
           mv ssh_key.pem ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ needs.terraform.outputs.k3s_ip }} >> ~/.ssh/known_hosts
 
-          # Télécharger le kubeconfig
-          scp -i ~/.ssh/id_rsa ec2-user@${{ needs.terraform.outputs.k3s_ip }}:/home/ec2-user/.kube/config kubeconfig.yaml
+          echo "📡 Connexion à K3s sur ${K3S_IP}..."
+          ssh-keyscan -H "${K3S_IP}" >> ~/.ssh/known_hosts
+
+          # Télécharger le kubeconfig avec retry
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            if scp -i ~/.ssh/id_rsa -o ConnectTimeout=10 ec2-user@${K3S_IP}:/home/ec2-user/.kube/config kubeconfig.yaml; then
+              echo "✅ Kubeconfig récupéré"
+              break
+            else
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "⚠️ Tentative $RETRY_COUNT échouée, nouvelle tentative dans 10s..."
+                sleep 10
+              else
+                echo "❌ Impossible de récupérer le kubeconfig après $MAX_RETRIES tentatives"
+                exit 1
+              fi
+            fi
+          done
 
           # Remplacer localhost par l'IP publique
-          sed -i "s/127.0.0.1/${{ needs.terraform.outputs.k3s_ip }}/g" kubeconfig.yaml
+          sed -i "s/127.0.0.1/${K3S_IP}/g" kubeconfig.yaml
 
           export KUBECONFIG=$(pwd)/kubeconfig.yaml
           echo "KUBECONFIG=$(pwd)/kubeconfig.yaml" >> $GITHUB_ENV
 
           # Tester la connexion
+          echo "🔍 Test de connexion au cluster..."
           kubectl cluster-info
           kubectl get nodes
 
