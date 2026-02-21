@@ -1,7 +1,7 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "Microservice d'authentification avec gestion multi-tenant",
+        "description": "Microservice d'authentification avec gestion multi-tenant et CI/CD automatisé",
         "title": "Auth Service API",
         "termsOfService": "http://swagger.io/terms/",
         "contact": {
@@ -12,7 +12,7 @@
             "name": "Apache 2.0",
             "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
         },
-        "version": "1.0"
+        "version": "0.0.24"
     },
     "host": "localhost:8081",
     "basePath": "/",

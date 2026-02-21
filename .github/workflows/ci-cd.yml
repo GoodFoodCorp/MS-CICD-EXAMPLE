@@ -555,10 +555,19 @@ jobs:
         run: |
           VERSION="${{ needs.versioning.outputs.version }}"
           VERSION_NO_V="${VERSION#v}"
-
+          K3S_IP="${{ steps.k3s-ip.outputs.K3S_IP }}"
+          
           echo "## 🚀 Déploiement réussi!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Informations de build" >> $GITHUB_STEP_SUMMARY
           echo "- **Version Git**: ${{ needs.versioning.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Image Docker**: ${{ env.IMAGE_NAME }}:${VERSION_NO_V}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Auteur**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🌐 URLs d'accès" >> $GITHUB_STEP_SUMMARY
+          echo "- 📊 **[Scalar API Docs](http://${K3S_IP}:30081/scalar)** - Interface interactive" >> $GITHUB_STEP_SUMMARY
+          echo "- 💚 **[Health Check](http://${K3S_IP}:30081/health)** - Status de l'API" >> $GITHUB_STEP_SUMMARY
+          echo "- 📄 **[Swagger JSON](http://${K3S_IP}:30081/api-docs/swagger.json)** - Spécification OpenAPI" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔐 **[Register](http://${K3S_IP}:30081/api/auth/register)** - Créer un compte" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔑 **[Login](http://${K3S_IP}:30081/api/auth/login)** - Se connecter" >> $GITHUB_STEP_SUMMARY

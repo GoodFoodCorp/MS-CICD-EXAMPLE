@@ -23,8 +23,8 @@ import (
 )
 
 // @title           Auth Service API
-// @version         1.0
-// @description     Microservice d'authentification avec gestion multi-tenant
+// @version         0.0.24
+// @description     Microservice d'authentification avec gestion multi-tenant et CI/CD automatisé
 // @termsOfService  http://swagger.io/terms/
 
 // @contact.name   API Support

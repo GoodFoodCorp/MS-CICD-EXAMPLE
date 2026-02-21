@@ -119,6 +119,15 @@ resource "aws_security_group" "k3s" {
     description = "Application"
   }
 
+  # NodePort pour le service Kubernetes
+  ingress {
+    from_port   = 30081
+    to_port     = 30081
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "NodePort Service"
+  }
+
   # API Kubernetes
   ingress {
     from_port   = 6443
