@@ -480,9 +480,9 @@ jobs:
           # Retirer le 'v' au début si présent
           VERSION_NO_V="${VERSION#v}"
           IMAGE="${{ env.IMAGE_NAME }}:${VERSION_NO_V}"
-          
+
           echo "🔍 Vérification de l'existence de l'image ${IMAGE}..."
-          
+
           # Attendre que l'image soit disponible sur Docker Hub
           MAX_RETRIES=10
           RETRY=0
@@ -508,29 +508,29 @@ jobs:
           # Retirer le 'v' au début si présent
           VERSION_NO_V="${VERSION#v}"
           IMAGE="${{ env.IMAGE_NAME }}:${VERSION_NO_V}"
-          
+
           # Créer le namespace si nécessaire
           kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
 
-          # Appliquer les manifests (service, hpa, etc) mais PAS le deployment
-          kubectl apply -f k8s/deployment.yaml --dry-run=client -o yaml | \
-            sed "s|image: .*|image: ${IMAGE}|" | \
-            kubectl apply -f -
-          
-          # Appliquer les autres ressources
-          for file in k8s/*.yaml; do
-            if [ "$file" != "k8s/deployment.yaml" ]; then
-              kubectl apply -f "$file"
-            fi
-          done
+          # Appliquer tous les manifests Kubernetes avec server-side apply pour éviter les conflits
+          echo "📦 Application des manifests Kubernetes..."
+          kubectl apply -f k8s/ --server-side=true --force-conflicts -n production
+
+          # Mettre à jour l'image du deployment avec la nouvelle version
+          echo "🐳 Mise à jour de l'image vers ${IMAGE}..."
+          kubectl set image deployment/auth-service \
+            auth-service=${IMAGE} \
+            -n production \
+            --record=false
 
           # Attendre le rollout avec un timeout plus long
           echo "⏳ Attente du rollout pour la version ${VERSION_NO_V}..."
           kubectl rollout status deployment/auth-service -n production --timeout=10m
 
           # Vérifier que les pods sont bien démarrés
-          kubectl get pods -n production -l app=auth-service
-          
+          echo "📊 État des pods:"
+          kubectl get pods -n production -l app=auth-service -o wide
+
           echo "✅ Déploiement réussi!"
 
       - name: Send notification
@@ -555,7 +555,7 @@ jobs:
         run: |
           VERSION="${{ needs.versioning.outputs.version }}"
           VERSION_NO_V="${VERSION#v}"
-          
+
           echo "## 🚀 Déploiement réussi!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Version Git**: ${{ needs.versioning.outputs.version }}" >> $GITHUB_STEP_SUMMARY
