@@ -14,7 +14,6 @@
         },
         "version": "0.0.24"
     },
-    "host": "localhost:8081",
     "basePath": "/",
     "paths": {
         "/api/admin/promote": {
