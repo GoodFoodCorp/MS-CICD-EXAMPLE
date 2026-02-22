@@ -251,12 +251,14 @@ jobs:
         run: |
           terraform init
 
-      - name: Import existing resources
+      - name: Cleanup orphaned AWS resources
         working-directory: ./terraform
         continue-on-error: true
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
-          chmod +x import-existing.sh
-          ./import-existing.sh
+          chmod +x cleanup-orphaned.sh
+          ./cleanup-orphaned.sh || echo "⚠️ Cleanup terminé avec warnings (normal si aucune ressource orpheline)"
 
       - name: Terraform Plan
         id: plan
