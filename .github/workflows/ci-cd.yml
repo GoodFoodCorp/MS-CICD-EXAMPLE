@@ -251,6 +251,13 @@ jobs:
         run: |
           terraform init
 
+      - name: Import existing resources
+        working-directory: ./terraform
+        continue-on-error: true
+        run: |
+          chmod +x import-existing.sh
+          ./import-existing.sh
+
       - name: Terraform Plan
         id: plan
         working-directory: ./terraform
