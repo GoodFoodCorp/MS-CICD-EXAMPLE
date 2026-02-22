@@ -4,23 +4,17 @@
 # Build outputs
 *.exe
 *.out
-auth-service
 
 # Test coverage
 *.cover
 coverage.out
-coverage.html
 
 # IDE
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
 
 # OS
 .DS_Store
-Thumbs.db
 
 # Terraform
 .terraform/
@@ -30,13 +24,3 @@ terraform.tfstate.backup
 *.tfvars
 !terraform.tfvars.example
 backend-override.tf
-
-# SSH & Secrets
-ssh_key.pem
-*.pem
-*.key
-kubeconfig*.yaml
-/tmp/
-
-# Logs
-*.log
