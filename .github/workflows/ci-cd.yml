@@ -556,7 +556,7 @@ jobs:
           VERSION="${{ needs.versioning.outputs.version }}"
           VERSION_NO_V="${VERSION#v}"
           K3S_IP="${{ steps.k3s-ip.outputs.K3S_IP }}"
-          
+
           echo "## 🚀 Déploiement réussi!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Informations de build" >> $GITHUB_STEP_SUMMARY
