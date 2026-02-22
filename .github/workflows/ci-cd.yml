@@ -225,8 +225,8 @@ jobs:
     needs: [versioning, docker]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     outputs:
-      k3s_ip: ${{ steps.deploy.outputs.K3S_IP }}
-      terraform_changes: ${{ steps.deploy.outputs.TERRAFORM_CHANGES }}
+      k3s_ip: ${{ steps.get-ip.outputs.K3S_IP }}
+      terraform_changes: ${{ steps.plan.outputs.TERRAFORM_CHANGES }}
 
     steps:
       - name: Checkout code
@@ -246,39 +246,54 @@ jobs:
           terraform_version: 1.6.0
           terraform_wrapper: false
 
-      - name: Pre-deployment Cleanup
+      - name: Terraform Init
         working-directory: ./terraform
-        env:
-          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
-          chmod +x pre-deploy-cleanup.sh
-          ./pre-deploy-cleanup.sh || echo "⚠️ Nettoyage échoué, on continue quand même..."
+          terraform init
 
-      - name: Smart Terraform Deployment
-        id: deploy
+      - name: Terraform Plan
+        id: plan
         working-directory: ./terraform
         env:
           TF_VAR_docker_username: ${{ secrets.DOCKER_USERNAME }}
           TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
-          chmod +x ci-deploy.sh
-          ./ci-deploy.sh
+          terraform plan -out=tfplan -detailed-exitcode || EXIT_CODE=$?
+          if [ ${EXIT_CODE:-0} -eq 2 ]; then
+            echo "TERRAFORM_CHANGES=true" >> $GITHUB_OUTPUT
+            echo "✅ Changements détectés"
+          else
+            echo "TERRAFORM_CHANGES=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ Aucun changement"
+          fi
 
-      - name: Get K3s IP (fallback)
+      - name: Terraform Apply
+        id: deploy
+        if: steps.plan.outputs.TERRAFORM_CHANGES == 'true'
+        working-directory: ./terraform
+        env:
+          TF_VAR_docker_username: ${{ secrets.DOCKER_USERNAME }}
+          TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          terraform apply tfplan
+          K3S_IP=$(terraform output -raw k3s_public_ip 2>/dev/null || echo "")
+          echo "K3S_IP=${K3S_IP}" >> $GITHUB_OUTPUT
+          echo "TERRAFORM_CHANGES=true" >> $GITHUB_OUTPUT
+
+      - name: Get K3s IP (always)
         id: get-ip
-        if: steps.deploy.outputs.K3S_IP == ''
         working-directory: ./terraform
         run: |
-          # Si le script n'a pas trouvé l'IP, chercher dans l'état
-          if terraform output k3s_public_ip &>/dev/null; then
-            K3S_IP=$(terraform output -raw k3s_public_ip)
-            echo "K3S_IP=${K3S_IP}" >> $GITHUB_OUTPUT
-            echo "✅ IP K3s récupérée: ${K3S_IP}"
-          else
-            echo "⚠️  Impossible de récupérer l'IP K3s"
+          # Récupérer l'IP depuis l'état Terraform
+          K3S_IP=$(terraform output -raw k3s_public_ip 2>/dev/null || echo "")
+          if [ -z "$K3S_IP" ]; then
+            echo "⚠️ Impossible de récupérer l'IP K3s"
             exit 1
           fi
+          echo "K3S_IP=${K3S_IP}" >> $GITHUB_OUTPUT
+          echo "✅ IP K3s: ${K3S_IP}"
 
       - name: Prepare SSH Key
         run: |
@@ -299,7 +314,7 @@ jobs:
           retention-days: 1
 
       - name: Wait for K3s to be ready
-        if: steps.deploy.outputs.TERRAFORM_CHANGES == 'true'
+        if: steps.plan.outputs.TERRAFORM_CHANGES == 'true'
         run: |
           echo "⏳ Infrastructure modifiée - Attente que K3s soit prêt (90s)..."
           sleep 90
@@ -308,13 +323,13 @@ jobs:
         run: |
           echo "📊 Résumé Terraform" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.deploy.outputs.TERRAFORM_CHANGES }}" = "true" ]; then
+          if [ "${{ steps.plan.outputs.TERRAFORM_CHANGES }}" = "true" ]; then
             echo "✅ Infrastructure mise à jour" >> $GITHUB_STEP_SUMMARY
           else
             echo "ℹ️ Infrastructure déjà à jour - Aucun changement" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "🖥️ K3s IP: ${{ steps.deploy.outputs.K3S_IP || steps.get-ip.outputs.K3S_IP }}" >> $GITHUB_STEP_SUMMARY
+          echo "🖥️ K3s IP: ${{ steps.get-ip.outputs.K3S_IP }}" >> $GITHUB_STEP_SUMMARY
 
   # ═══════════════════════════════════════════════════════════
   # Job 6: Deploy to Kubernetes
