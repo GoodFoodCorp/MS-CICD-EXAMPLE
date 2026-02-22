@@ -256,9 +256,11 @@ jobs:
         continue-on-error: true
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
+          TF_VAR_docker_username: ${{ secrets.DOCKER_USERNAME }}
+          TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
         run: |
           chmod +x cleanup-orphaned.sh
-          ./cleanup-orphaned.sh || echo "⚠️ Cleanup terminé avec warnings (normal si aucune ressource orpheline)"
+          ./cleanup-orphaned.sh || echo "⚠️ Cleanup terminé avec warnings (normal si imports partiels)"
 
       - name: Terraform Plan
         id: plan
