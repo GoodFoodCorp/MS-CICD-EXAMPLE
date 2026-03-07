@@ -89,8 +89,10 @@ func main() {
 		}
 	} else {
 		log.Printf("[WARNING] Application démarre SANS connexion DB après %d tentatives", maxRetries)
+	}
+
 	// Initialiser les repositories (peuvent être nil-safe)
-	var authRepo *repository.AuthRepository
+	var authRepo repository.AuthRepository
 	if db != nil {
 		authRepo = repository.NewAuthRepository(db)
 	}
