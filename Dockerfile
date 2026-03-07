@@ -1,5 +1,10 @@
 FROM golang:1.26-alpine AS builder
 
+# Force cache invalidation
+ARG BUILD_DATE
+ARG VERSION
+LABEL build_date=$BUILD_DATE version=$VERSION
+
 WORKDIR /app
 
 COPY go.mod go.sum ./

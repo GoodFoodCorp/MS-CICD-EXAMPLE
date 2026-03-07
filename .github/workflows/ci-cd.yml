@@ -228,8 +228,10 @@ jobs:
             ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version_no_v }}
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
-          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
-          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.run_id }}
+            VERSION=${{ steps.version.outputs.version_no_v }}
+          no-cache: true
 
   # ---------------------------------------------------------
   # Job 5: Terraform Infrastructure (Intelligent)
@@ -510,7 +512,7 @@ jobs:
           # Remplacer le placeholder PUBLIC_IP par l'IP publique réelle
           echo "[INFO] Configuring PUBLIC_IP in deployment: ${K3S_IP}"
           sed -i "s/PUBLIC_IP_PLACEHOLDER/${K3S_IP}/g" k8s/deployment.yaml
-          
+
           # Remplacer le placeholder VERSION par la version Git réelle
           echo "[INFO] Configuring APP_VERSION in deployment: ${VERSION}"
           sed -i "s/VERSION_PLACEHOLDER/${VERSION}/g" k8s/deployment.yaml
