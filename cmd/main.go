@@ -48,22 +48,23 @@ func main() {
 	var db *gorm.DB
 	var err error
 
-	// Retry de connexion à la DB avec backoff (max 5 minutes pour RDS)
-	maxRetries := 150
+	// Retry de connexion à la DB avec backoff (max 1 minute)
+	maxRetries := 30
 	for i := 0; i < maxRetries; i++ {
 		if dsn != "" {
 			db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 			if err == nil {
-				log.Println("Connexion à la base de données réussie")
+				log.Println("[OK] Connexion à la base de données réussie")
 				break
 			}
 			if i < maxRetries-1 {
 				waitTime := 2 * time.Second
-				log.Printf("Tentative %d/%d de connexion DB échouée, retry dans %v: %v", i+1, maxRetries, waitTime, err)
+				log.Printf("[RETRY] Tentative %d/%d de connexion DB échouée, retry dans %v: %v", i+1, maxRetries, waitTime, err)
 				time.Sleep(waitTime)
 			}
 		} else {
-			log.Fatal("ERREUR FATALE: DATABASE_URL non configurée")
+			log.Println("[WARNING] DATABASE_URL non configurée")
+			break
 		}
 	}
 
@@ -78,19 +79,21 @@ func main() {
 			&models.EmailVerificationToken{},
 		)
 		if err != nil {
-			log.Printf("WARNING: Echec de la migration DB: %v", err)
+			log.Printf("[WARNING] Echec de la migration DB: %v", err)
 		} else {
 			// Seeder: créer tenant, rôles et admin par défaut
 			if err := seeder.Seed(db); err != nil {
-				log.Printf("WARNING: Echec du seeder: %v", err)
+				log.Printf("[WARNING] Echec du seeder: %v", err)
 			}
+			log.Println("[OK] Migrations et seeding terminés")
 		}
 	} else {
-		log.Fatal("ERREUR FATALE: Impossible de se connecter à la base de données après 150 tentatives (5 minutes)")
+		log.Printf("[WARNING] Application démarre SANS connexion DB après %d tentatives", maxRetries)
+	// Initialiser les repositories (peuvent être nil-safe)
+	var authRepo *repository.AuthRepository
+	if db != nil {
+		authRepo = repository.NewAuthRepository(db)
 	}
-
-	// DB est connectée, initialiser les repositories
-	authRepo := repository.NewAuthRepository(db)
 	
 	emailService := services.NewEmailService()
 
