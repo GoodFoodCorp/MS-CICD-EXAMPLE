@@ -350,6 +350,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+          terraform_wrapper: false
+
       - name: Download SSH Key
         uses: actions/download-artifact@v4
         with:
@@ -519,6 +533,30 @@ jobs:
 
           # Créer le namespace si nécessaire
           kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
+
+          # Créer le secret DATABASE_URL depuis l'output Terraform
+          echo "[INFO] Creating database-url secret..."
+          cd terraform
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          terraform init -backend-config="bucket=auth-service-tfstate-prod-${AWS_ACCOUNT_ID}" \
+            -backend-config="key=terraform.tfstate" \
+            -backend-config="region=${{ secrets.AWS_REGION }}" \
+            -reconfigure -input=false -no-color > /dev/null 2>&1 || true
+          DB_HOST=$(terraform output -raw rds_endpoint 2>/dev/null || echo "")
+          DB_USER=$(terraform output -raw rds_username 2>/dev/null || echo "")
+          DB_PASS=$(terraform output -raw rds_password 2>/dev/null || echo "")
+          DB_NAME=$(terraform output -raw rds_database_name 2>/dev/null || echo "authdb")
+          cd ..
+          if [ -n "${DB_HOST}" ] && [ -n "${DB_USER}" ] && [ -n "${DB_PASS}" ]; then
+            DATABASE_URL="postgres://${DB_USER}:${DB_PASS}@${DB_HOST}/${DB_NAME}?sslmode=require"
+            kubectl create secret generic database-url \
+              --from-literal=url="${DATABASE_URL}" \
+              --namespace=production \
+              --dry-run=client -o yaml | kubectl apply -f -
+            echo "[OK] Secret database-url créé/mis à jour"
+          else
+            echo "[WARNING] Outputs Terraform manquants, secret non mis à jour"
+          fi
 
           # Appliquer tous les manifests Kubernetes avec server-side apply pour éviter les conflits
           echo "[INFO] Applying Kubernetes manifests..."

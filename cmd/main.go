@@ -46,52 +46,63 @@ func main() {
 	}
 
 	var db *gorm.DB
-	var err error
 
-	// Retry de connexion à la DB avec backoff (max 1 minute)
-	maxRetries := 30
-	for i := 0; i < maxRetries; i++ {
-		if dsn != "" {
-			db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
-			if err == nil {
-				log.Println("[OK] Connexion à la base de données réussie")
-				break
+	// Connexion DB avec retry en goroutine pour ne pas bloquer le démarrage HTTP
+	// Le serveur démarre immédiatement, les endpoints retournent 503 si DB pas prête
+	dbReady := make(chan struct{})
+
+	go func() {
+		maxRetries := 30
+		for i := 0; i < maxRetries; i++ {
+			if dsn != "" {
+				conn, connErr := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+				if connErr == nil {
+					db = conn
+					log.Println("[OK] Connexion à la base de données réussie")
+
+					if migrateErr := db.AutoMigrate(
+						&models.Tenant{},
+						&models.User{},
+						&models.Role{},
+						&models.UserRole{},
+						&models.RefreshToken{},
+						&models.PasswordResetToken{},
+						&models.EmailVerificationToken{},
+					); migrateErr != nil {
+						log.Printf("[WARNING] Echec migration DB: %v", migrateErr)
+					} else {
+						if seedErr := seeder.Seed(db); seedErr != nil {
+							log.Printf("[WARNING] Echec seeder: %v", seedErr)
+						}
+						log.Println("[OK] Migrations et seeding terminés")
+					}
+					close(dbReady)
+					return
+				}
+				if i < maxRetries-1 {
+					log.Printf("[RETRY] Tentative %d/%d connexion DB échouée, retry dans 2s: %v", i+1, maxRetries, connErr)
+					time.Sleep(2 * time.Second)
+				}
+			} else {
+				log.Println("[WARNING] DATABASE_URL non configurée")
+				close(dbReady)
+				return
 			}
-			if i < maxRetries-1 {
-				waitTime := 2 * time.Second
-				log.Printf("[RETRY] Tentative %d/%d de connexion DB échouée, retry dans %v: %v", i+1, maxRetries, waitTime, err)
-				time.Sleep(waitTime)
-			}
-		} else {
-			log.Println("[WARNING] DATABASE_URL non configurée")
-			break
 		}
+		log.Printf("[WARNING] DB inaccessible après %d tentatives, app en mode dégradé", maxRetries)
+		close(dbReady)
+	}()
+
+	// Attendre max 3s pour que la DB soit prête avant de démarrer
+	// Si pas prête, le serveur démarre quand même (endpoints retourneront 503)
+	select {
+	case <-dbReady:
+		log.Println("[OK] DB prête au démarrage du serveur")
+	case <-time.After(3 * time.Second):
+		log.Println("[INFO] DB pas encore prête, démarrage serveur en mode dégradé")
 	}
 
-	if db != nil {
-		err = db.AutoMigrate(
-			&models.Tenant{},
-			&models.User{},
-			&models.Role{},
-			&models.UserRole{},
-			&models.RefreshToken{},
-			&models.PasswordResetToken{},
-			&models.EmailVerificationToken{},
-		)
-		if err != nil {
-			log.Printf("[WARNING] Echec de la migration DB: %v", err)
-		} else {
-			// Seeder: créer tenant, rôles et admin par défaut
-			if err := seeder.Seed(db); err != nil {
-				log.Printf("[WARNING] Echec du seeder: %v", err)
-			}
-			log.Println("[OK] Migrations et seeding terminés")
-		}
-	} else {
-		log.Printf("[WARNING] Application démarre SANS connexion DB après %d tentatives", maxRetries)
-	}
-
-	// Initialiser les repositories (peuvent être nil-safe)
+	// Initialiser les repositories (nil si DB pas connectée)
 	var authRepo repository.AuthRepository
 	if db != nil {
 		authRepo = repository.NewAuthRepository(db)
@@ -185,6 +196,10 @@ func main() {
 	})
 
 	r.GET("/health/db", func(c *gin.Context) {
+		if db == nil {
+			c.JSON(503, gin.H{"status": "DB not connected"})
+			return
+		}
 		sqlDB, _ := db.DB()
 		if err := sqlDB.Ping(); err != nil {
 			c.JSON(500, gin.H{"status": "DB Dead", "error": err.Error()})
