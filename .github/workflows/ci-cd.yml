@@ -5,6 +5,16 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action à exécuter"
+        required: true
+        type: choice
+        options:
+          - deploy
+          - destroy
+        default: deploy
 
 permissions:
   contents: write
@@ -12,14 +22,14 @@ permissions:
   packages: write
 
 env:
-  GO_VERSION: "1.24.13"
+  GO_VERSION: "1.26.1"
   DOCKER_REGISTRY: docker.io
   IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/auth-service
 
 jobs:
-  # ═══════════════════════════════════════════════════════════
+  # ---------------------------------------------------------
   # Job 1: Build et Tests
-  # ═══════════════════════════════════════════════════════════
+  # ---------------------------------------------------------
   build-and-test:
     name: Build & Test
     runs-on: ubuntu-latest
@@ -44,7 +54,7 @@ jobs:
       - name: Build
         run: |
           go build -v -o auth-service ./cmd/main.go
-          echo "✅ Build réussi"
+          echo "Build successful"
 
       - name: Run Tests
         run: |
@@ -59,9 +69,9 @@ jobs:
             coverage.out
             coverage.html
 
-  # ═══════════════════════════════════════════════════════════
+  # ---------------------------------------------------------
   # Job 2: Security Scanning
-  # ═══════════════════════════════════════════════════════════
+  # ---------------------------------------------------------
   security:
     name: Security Scan
     runs-on: ubuntu-latest
@@ -82,6 +92,7 @@ jobs:
           govulncheck ./...
 
       - name: Run gosec Security Scanner
+        continue-on-error: true
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
           gosec -no-fail -fmt=sarif -out=gosec-results.sarif ./... || true
@@ -93,14 +104,16 @@ jobs:
           sarif_file: gosec-results.sarif
           category: gosec
 
-  # ═══════════════════════════════════════════════════════════
+  # ---------------------------------------------------------
   # Job 3: Versioning & Tagging
-  # ═══════════════════════════════════════════════════════════
+  # ---------------------------------------------------------
   versioning:
     name: Version & Tag
     runs-on: ubuntu-latest
     needs: [build-and-test, security]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: |
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy')
     permissions:
       contents: write
     outputs:
@@ -172,14 +185,16 @@ jobs:
           draft: false
           prerelease: false
 
-  # ═══════════════════════════════════════════════════════════
+  # ---------------------------------------------------------
   # Job 4: Build & Push Docker Image
-  # ═══════════════════════════════════════════════════════════
+  # ---------------------------------------------------------
   docker:
     name: Build & Push Docker
     runs-on: ubuntu-latest
     needs: versioning
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: |
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy')
 
     steps:
       - name: Checkout code
@@ -216,14 +231,16 @@ jobs:
           cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
           cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
 
-  # ═══════════════════════════════════════════════════════════
+  # ---------------------------------------------------------
   # Job 5: Terraform Infrastructure (Intelligent)
-  # ═══════════════════════════════════════════════════════════
+  # ---------------------------------------------------------
   terraform:
     name: Terraform Apply
     runs-on: ubuntu-latest
     needs: [versioning, docker]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: |
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy')
     outputs:
       k3s_ip: ${{ steps.deploy.outputs.K3S_IP }}
       terraform_changes: ${{ steps.deploy.outputs.TERRAFORM_CHANGES }}
@@ -252,7 +269,7 @@ jobs:
           AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
           chmod +x pre-deploy-cleanup.sh
-          ./pre-deploy-cleanup.sh || echo "⚠️ Nettoyage échoué, on continue quand même..."
+          ./pre-deploy-cleanup.sh || echo "[WARNING] Cleanup failed, continuing anyway..."
 
       - name: Smart Terraform Deployment
         id: deploy
@@ -274,9 +291,9 @@ jobs:
           if terraform output k3s_public_ip &>/dev/null; then
             K3S_IP=$(terraform output -raw k3s_public_ip)
             echo "K3S_IP=${K3S_IP}" >> $GITHUB_OUTPUT
-            echo "✅ IP K3s récupérée: ${K3S_IP}"
+            echo "[OK] K3s IP retrieved: ${K3S_IP}"
           else
-            echo "⚠️  Impossible de récupérer l'IP K3s"
+            echo "[ERROR] Unable to retrieve K3s IP"
             exit 1
           fi
 
@@ -284,11 +301,11 @@ jobs:
         run: |
           cd terraform
           if [ -f ../ssh_key.pem ]; then
-            echo "✅ Clé SSH déjà préparée"
+            echo "[OK] SSH key already prepared"
           else
             terraform output -raw ssh_private_key > ../ssh_key.pem
             chmod 600 ../ssh_key.pem
-            echo "✅ Clé SSH extraite de l'état"
+            echo "[OK] SSH key extracted from state"
           fi
 
       - name: Upload SSH Key as artifact
@@ -301,29 +318,31 @@ jobs:
       - name: Wait for K3s to be ready
         if: steps.deploy.outputs.TERRAFORM_CHANGES == 'true'
         run: |
-          echo "⏳ Infrastructure modifiée - Attente que K3s soit prêt (90s)..."
+          echo "[INFO] Infrastructure modified - Waiting for K3s to be ready (90s)..."
           sleep 90
 
       - name: Summary
         run: |
-          echo "📊 Résumé Terraform" >> $GITHUB_STEP_SUMMARY
+          echo "## Terraform Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "${{ steps.deploy.outputs.TERRAFORM_CHANGES }}" = "true" ]; then
-            echo "✅ Infrastructure mise à jour" >> $GITHUB_STEP_SUMMARY
+            echo "- Infrastructure updated" >> $GITHUB_STEP_SUMMARY
           else
-            echo "ℹ️ Infrastructure déjà à jour - Aucun changement" >> $GITHUB_STEP_SUMMARY
+            echo "- Infrastructure already up to date - No changes" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "🖥️ K3s IP: ${{ steps.deploy.outputs.K3S_IP || steps.get-ip.outputs.K3S_IP }}" >> $GITHUB_STEP_SUMMARY
+          echo "**K3s IP:** ${{ steps.deploy.outputs.K3S_IP || steps.get-ip.outputs.K3S_IP }}" >> $GITHUB_STEP_SUMMARY
 
-  # ═══════════════════════════════════════════════════════════
+  # ---------------------------------------------------------
   # Job 6: Deploy to Kubernetes
-  # ═══════════════════════════════════════════════════════════
+  # ---------------------------------------------------------
   deploy:
     name: Deploy to Kubernetes
     runs-on: ubuntu-latest
     needs: [versioning, docker, terraform]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: |
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy')
 
     steps:
       - name: Checkout code
@@ -340,7 +359,7 @@ jobs:
           # Récupérer l'IP depuis les outputs (avec fallback si besoin)
           K3S_IP="${{ needs.terraform.outputs.k3s_ip }}"
           echo "K3S_IP=${K3S_IP}" >> $GITHUB_OUTPUT
-          echo "🖥️ Utilisation de l'IP K3s: ${K3S_IP}"
+          echo "[INFO] Using K3s IP: ${K3S_IP}"
 
       - name: Setup SSH & Get Kubeconfig
         env:
@@ -358,41 +377,41 @@ jobs:
           ssh-keyscan -H "${K3S_IP}" >> ~/.ssh/known_hosts
 
           # Attendre que le serveur soit accessible via SSH
-          echo "📡 Vérification de l'accessibilité SSH de ${K3S_IP}..."
+          echo "[INFO] Checking SSH accessibility of ${K3S_IP}..."
           MAX_SSH_RETRIES=10
           SSH_RETRY=0
           while [ $SSH_RETRY -lt $MAX_SSH_RETRIES ]; do
             if ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 -o StrictHostKeyChecking=no ec2-user@${K3S_IP} "echo 'SSH OK'" &>/dev/null; then
-              echo "✅ Serveur SSH accessible"
+              echo "[OK] SSH server accessible"
               break
             else
               SSH_RETRY=$((SSH_RETRY + 1))
               if [ $SSH_RETRY -lt $MAX_SSH_RETRIES ]; then
-                echo "⏳ SSH pas encore prêt (tentative $SSH_RETRY/$MAX_SSH_RETRIES), attente 15s..."
+                echo "[WAIT] SSH not ready yet (attempt $SSH_RETRY/$MAX_SSH_RETRIES), waiting 15s..."
                 sleep 15
               else
-                echo "❌ Impossible de se connecter en SSH après $MAX_SSH_RETRIES tentatives"
+                echo "[ERROR] Unable to connect via SSH after $MAX_SSH_RETRIES attempts"
                 exit 1
               fi
             fi
           done
 
           # Attendre que le script user-data.sh soit terminé (flag .k3s-ready)
-          echo "⏳ Attente de la fin du script d'initialisation..."
+          echo "[INFO] Waiting for initialization script to complete..."
           MAX_INIT_RETRIES=30
           INIT_RETRY=0
           while [ $INIT_RETRY -lt $MAX_INIT_RETRIES ]; do
             if ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 ec2-user@${K3S_IP} "test -f /home/ec2-user/.k3s-ready"; then
-              echo "✅ Script d'initialisation terminé"
+              echo "[OK] Initialization script completed"
               break
             else
               INIT_RETRY=$((INIT_RETRY + 1))
               if [ $INIT_RETRY -lt $MAX_INIT_RETRIES ]; then
-                echo "⏳ Initialisation en cours (tentative $INIT_RETRY/$MAX_INIT_RETRIES), attente 20s..."
+                echo "[WAIT] Initialization in progress (attempt $INIT_RETRY/$MAX_INIT_RETRIES), waiting 20s..."
                 sleep 20
               else
-                echo "❌ Timeout: initialisation non terminée après $MAX_INIT_RETRIES tentatives"
-                echo "📋 Vérification des logs d'initialisation:"
+                echo "[ERROR] Timeout: initialization not completed after $MAX_INIT_RETRIES attempts"
+                echo "[DEBUG] Checking initialization logs:"
                 ssh -i ~/.ssh/id_rsa ec2-user@${K3S_IP} "sudo tail -50 /var/log/user-data.log" || true
                 exit 1
               fi
@@ -400,23 +419,23 @@ jobs:
           done
 
           # Attendre que le fichier kubeconfig existe
-          echo "📁 Vérification de l'existence du kubeconfig..."
+          echo "[INFO] Checking kubeconfig file existence..."
           MAX_FILE_RETRIES=5
           FILE_RETRY=0
           while [ $FILE_RETRY -lt $MAX_FILE_RETRIES ]; do
             if ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 ec2-user@${K3S_IP} "test -f /home/ec2-user/.kube/config"; then
-              echo "✅ Fichier kubeconfig existe"
+              echo "[OK] Kubeconfig file exists"
               break
             else
               FILE_RETRY=$((FILE_RETRY + 1))
               if [ $FILE_RETRY -lt $MAX_FILE_RETRIES ]; then
-                echo "⏳ Kubeconfig pas encore créé (tentative $FILE_RETRY/$MAX_FILE_RETRIES), attente 10s..."
+                echo "[WAIT] Kubeconfig not created yet (attempt $FILE_RETRY/$MAX_FILE_RETRIES), waiting 10s..."
                 sleep 10
               else
-                echo "❌ Fichier kubeconfig introuvable après $MAX_FILE_RETRIES tentatives"
-                echo "Contenu du répertoire .kube:"
-                ssh -i ~/.ssh/id_rsa ec2-user@${K3S_IP} "ls -la /home/ec2-user/.kube/ || echo 'Répertoire .kube introuvable'"
-                echo "📋 Logs K3s:"
+                echo "[ERROR] Kubeconfig file not found after $MAX_FILE_RETRIES attempts"
+                echo "[DEBUG] .kube directory contents:"
+                ssh -i ~/.ssh/id_rsa ec2-user@${K3S_IP} "ls -la /home/ec2-user/.kube/ || echo '.kube directory not found'"
+                echo "[DEBUG] K3s logs:"
                 ssh -i ~/.ssh/id_rsa ec2-user@${K3S_IP} "sudo tail -50 /var/log/user-data.log" || true
                 exit 1
               fi
@@ -424,20 +443,20 @@ jobs:
           done
 
           # Télécharger le kubeconfig avec retry
-          echo "📥 Téléchargement du kubeconfig..."
+          echo "[INFO] Downloading kubeconfig..."
           MAX_SCP_RETRIES=5
           SCP_RETRY=0
           while [ $SCP_RETRY -lt $MAX_SCP_RETRIES ]; do
             if scp -i ~/.ssh/id_rsa -o ConnectTimeout=30 ec2-user@${K3S_IP}:/home/ec2-user/.kube/config kubeconfig.yaml; then
-              echo "✅ Kubeconfig récupéré"
+              echo "[OK] Kubeconfig retrieved"
               break
             else
               SCP_RETRY=$((SCP_RETRY + 1))
               if [ $SCP_RETRY -lt $MAX_SCP_RETRIES ]; then
-                echo "⚠️ Tentative SCP $SCP_RETRY échouée, nouvelle tentative dans 10s..."
+                echo "[WARN] SCP attempt $SCP_RETRY failed, retrying in 10s..."
                 sleep 10
               else
-                echo "❌ Impossible de récupérer le kubeconfig après $MAX_SCP_RETRIES tentatives"
+                echo "[ERROR] Unable to retrieve kubeconfig after $MAX_SCP_RETRIES attempts"
                 exit 1
               fi
             fi
@@ -453,22 +472,22 @@ jobs:
           kubectl config set-cluster default --insecure-skip-tls-verify=true
 
           # Tester la connexion avec retry
-          echo "🔍 Test de connexion au cluster..."
+          echo "[INFO] Testing cluster connection..."
           MAX_KUBECTL_RETRIES=5
           KUBECTL_RETRY=0
           while [ $KUBECTL_RETRY -lt $MAX_KUBECTL_RETRIES ]; do
             if kubectl get nodes &>/dev/null; then
-              echo "✅ Connexion au cluster réussie"
+              echo "[OK] Cluster connection successful"
               kubectl cluster-info
               kubectl get nodes
               break
             else
               KUBECTL_RETRY=$((KUBECTL_RETRY + 1))
               if [ $KUBECTL_RETRY -lt $MAX_KUBECTL_RETRIES ]; then
-                echo "⏳ Cluster pas encore prêt (tentative $KUBECTL_RETRY/$MAX_KUBECTL_RETRIES), attente 10s..."
+                echo "[WAIT] Cluster not ready yet (attempt $KUBECTL_RETRY/$MAX_KUBECTL_RETRIES), waiting 10s..."
                 sleep 10
               else
-                echo "❌ Impossible de se connecter au cluster après $MAX_KUBECTL_RETRIES tentatives"
+                echo "[ERROR] Unable to connect to cluster after $MAX_KUBECTL_RETRIES attempts"
                 exit 1
               fi
             fi
@@ -481,22 +500,22 @@ jobs:
           VERSION_NO_V="${VERSION#v}"
           IMAGE="${{ env.IMAGE_NAME }}:${VERSION_NO_V}"
 
-          echo "🔍 Vérification de l'existence de l'image ${IMAGE}..."
+          echo "[INFO] Checking image existence: ${IMAGE}..."
 
           # Attendre que l'image soit disponible sur Docker Hub
           MAX_RETRIES=10
           RETRY=0
           while [ $RETRY -lt $MAX_RETRIES ]; do
             if docker manifest inspect ${IMAGE} &>/dev/null; then
-              echo "✅ Image ${IMAGE} trouvée sur Docker Hub"
+              echo "[OK] Image ${IMAGE} found on Docker Hub"
               break
             else
               RETRY=$((RETRY + 1))
               if [ $RETRY -lt $MAX_RETRIES ]; then
-                echo "⏳ Image pas encore disponible (tentative $RETRY/$MAX_RETRIES), attente 10s..."
+                echo "[WAIT] Image not available yet (attempt $RETRY/$MAX_RETRIES), waiting 10s..."
                 sleep 10
               else
-                echo "❌ Image ${IMAGE} introuvable après $MAX_RETRIES tentatives"
+                echo "[ERROR] Image ${IMAGE} not found after $MAX_RETRIES attempts"
                 exit 1
               fi
             fi
@@ -513,25 +532,25 @@ jobs:
           kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
 
           # Appliquer tous les manifests Kubernetes avec server-side apply pour éviter les conflits
-          echo "📦 Application des manifests Kubernetes..."
+          echo "[INFO] Applying Kubernetes manifests..."
           kubectl apply -f k8s/ --server-side=true --force-conflicts -n production
 
           # Mettre à jour l'image du deployment avec la nouvelle version
-          echo "🐳 Mise à jour de l'image vers ${IMAGE}..."
+          echo "[INFO] Updating image to ${IMAGE}..."
           kubectl set image deployment/auth-service \
             auth-service=${IMAGE} \
             -n production \
             --record=false
 
           # Attendre le rollout avec un timeout plus long
-          echo "⏳ Attente du rollout pour la version ${VERSION_NO_V}..."
+          echo "[INFO] Waiting for rollout to complete for version ${VERSION_NO_V}..."
           kubectl rollout status deployment/auth-service -n production --timeout=10m
 
           # Vérifier que les pods sont bien démarrés
-          echo "📊 État des pods:"
+          echo "[INFO] Pods status:"
           kubectl get pods -n production -l app=auth-service -o wide
 
-          echo "✅ Déploiement réussi!"
+          echo "[OK] Deployment successful!"
 
       - name: Deployment summary
         run: |
@@ -539,17 +558,73 @@ jobs:
           VERSION_NO_V="${VERSION#v}"
           K3S_IP="${{ steps.k3s-ip.outputs.K3S_IP }}"
 
-          echo "## 🚀 Déploiement réussi!" >> $GITHUB_STEP_SUMMARY
+          echo "## Deployment Successful" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 Informations de build" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version Git**: ${{ needs.versioning.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image Docker**: ${{ env.IMAGE_NAME }}:${VERSION_NO_V}" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Information" >> $GITHUB_STEP_SUMMARY
+          echo "- **Git Version**: ${{ needs.versioning.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Docker Image**: ${{ env.IMAGE_NAME }}:${VERSION_NO_V}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Auteur**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Author**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🌐 URLs d'accès" >> $GITHUB_STEP_SUMMARY
-          echo "- 📊 **[Scalar API Docs](http://${K3S_IP}:30081/scalar)** - Interface interactive" >> $GITHUB_STEP_SUMMARY
-          echo "- 💚 **[Health Check](http://${K3S_IP}:30081/health)** - Status de l'API" >> $GITHUB_STEP_SUMMARY
-          echo "- 📄 **[Swagger JSON](http://${K3S_IP}:30081/api-docs/swagger.json)** - Spécification OpenAPI" >> $GITHUB_STEP_SUMMARY
-          echo "- 🔐 **[Register](http://${K3S_IP}:30081/api/auth/register)** - Créer un compte" >> $GITHUB_STEP_SUMMARY
-          echo "- 🔑 **[Login](http://${K3S_IP}:30081/api/auth/login)** - Se connecter" >> $GITHUB_STEP_SUMMARY
+          echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
+          echo "- **[Scalar API Docs](http://${K3S_IP}:30081/scalar)** - Interactive interface" >> $GITHUB_STEP_SUMMARY
+          echo "- **[Health Check](http://${K3S_IP}:30081/health)** - API status" >> $GITHUB_STEP_SUMMARY
+          echo "- **[Swagger JSON](http://${K3S_IP}:30081/api-docs/swagger.json)** - OpenAPI specification" >> $GITHUB_STEP_SUMMARY
+          echo "- **[Register](http://${K3S_IP}:30081/api/auth/register)** - Create account" >> $GITHUB_STEP_SUMMARY
+          echo "- **[Login](http://${K3S_IP}:30081/api/auth/login)** - Sign in" >> $GITHUB_STEP_SUMMARY
+
+  # ---------------------------------------------------------
+  # Job 7: Terraform Destroy (Manuel uniquement)
+  # ---------------------------------------------------------
+  terraform-destroy:
+    name: Terraform Destroy (AWS)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
+    environment:
+      name: destruction
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+
+      - name: Terraform Destroy
+        working-directory: ./terraform
+        env:
+          TF_VAR_docker_username: ${{ secrets.DOCKER_USERNAME }}
+          TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          echo "[WARNING] Destroying all AWS infrastructure!"
+          echo "[INFO] Destruction in progress..."
+          terraform destroy -auto-approve
+          echo "[OK] AWS infrastructure destroyed successfully!"
+
+      - name: Destruction summary
+        run: |
+          echo "## Infrastructure Destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All AWS resources have been deleted:" >> $GITHUB_STEP_SUMMARY
+          echo "- EC2 instances terminated" >> $GITHUB_STEP_SUMMARY
+          echo "- Security groups deleted" >> $GITHUB_STEP_SUMMARY
+          echo "- SSH keys deleted" >> $GITHUB_STEP_SUMMARY
+          echo "- All Terraform resources destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note:** To redeploy, run the workflow with the 'deploy' action" >> $GITHUB_STEP_SUMMARY
