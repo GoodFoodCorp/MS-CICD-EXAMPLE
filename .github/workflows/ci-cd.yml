@@ -533,30 +533,12 @@ jobs:
 
           echo "✅ Déploiement réussi!"
 
-      - name: Send notification
-        if: always()
-        run: |
-          STATUS="${{ job.status }}"
-          VERSION="${{ needs.versioning.outputs.version }}"
-
-          # Envoyer une notification webhook
-          curl -X POST "${{ secrets.WEBHOOK_URL }}" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"service\": \"auth-service\",
-              \"version\": \"$VERSION\",
-              \"status\": \"$STATUS\",
-              \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
-              \"commit\": \"${{ github.sha }}\",
-              \"author\": \"${{ github.actor }}\"
-            }" || echo "⚠️ Notification webhook failed (non-blocking)"
-
       - name: Deployment summary
         run: |
           VERSION="${{ needs.versioning.outputs.version }}"
           VERSION_NO_V="${VERSION#v}"
           K3S_IP="${{ steps.k3s-ip.outputs.K3S_IP }}"
-          
+
           echo "## 🚀 Déploiement réussi!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Informations de build" >> $GITHUB_STEP_SUMMARY
