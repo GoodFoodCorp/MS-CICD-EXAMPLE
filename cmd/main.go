@@ -48,8 +48,8 @@ func main() {
 	var db *gorm.DB
 	var err error
 
-	// Retry de connexion à la DB avec backoff
-	maxRetries := 10
+	// Retry de connexion à la DB avec backoff (max 2 minutes pour RDS)
+	maxRetries := 60
 	for i := 0; i < maxRetries; i++ {
 		if dsn != "" {
 			db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
@@ -58,12 +58,12 @@ func main() {
 				break
 			}
 			if i < maxRetries-1 {
-				waitTime := time.Duration(i+1) * 2 * time.Second
+				waitTime := 2 * time.Second
 				log.Printf("Tentative %d/%d de connexion DB échouée, retry dans %v: %v", i+1, maxRetries, waitTime, err)
 				time.Sleep(waitTime)
 			}
 		} else {
-			break
+			log.Fatal("ERREUR FATALE: DATABASE_URL non configurée")
 		}
 	}
 
@@ -86,13 +86,15 @@ func main() {
 			}
 		}
 	} else {
-		log.Println("WARNING: Application démarrée sans connexion DB")
+		log.Fatal("ERREUR FATALE: Impossible de se connecter à la base de données après 60 tentatives (2 minutes)")
 	}
 
+	// DB est connectée, initialiser les repositories
 	authRepo := repository.NewAuthRepository(db)
+	
 	emailService := services.NewEmailService()
 
-	// Services
+	// Services (peuvent gérer authRepo nil)
 	authService := services.NewAuthService(authRepo, emailService)
 	userAdminService := services.NewUserAdminService(authRepo)
 	roleService := services.NewRoleService(authRepo)
