@@ -14,6 +14,7 @@
         },
         "version": "0.0.24"
     },
+    "host": "PUBLIC_IP_PLACEHOLDER:30081",
     "basePath": "/",
     "paths": {
         "/api/admin/promote": {

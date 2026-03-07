@@ -38,6 +38,8 @@ spec:
                   key: url
             - name: PUBLIC_IP
               value: "PUBLIC_IP_PLACEHOLDER"
+            - name: APP_VERSION
+              value: "VERSION_PLACEHOLDER"
             - name: APP_PORT
               value: "8081"
             - name: PORT

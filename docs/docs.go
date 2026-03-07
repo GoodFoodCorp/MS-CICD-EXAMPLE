@@ -1291,12 +1291,12 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "1.0",
-	Host:             "localhost:8081",
+	Version:          "0.0.24",
+	Host:             "PUBLIC_IP_PLACEHOLDER:30081",
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "Auth Service API",
-	Description:      "Microservice d'authentification avec gestion multi-tenant",
+	Description:      "Microservice d'authentification avec gestion multi-tenant et CI/CD automatisé",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

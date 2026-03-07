@@ -510,6 +510,10 @@ jobs:
           # Remplacer le placeholder PUBLIC_IP par l'IP publique réelle
           echo "[INFO] Configuring PUBLIC_IP in deployment: ${K3S_IP}"
           sed -i "s/PUBLIC_IP_PLACEHOLDER/${K3S_IP}/g" k8s/deployment.yaml
+          
+          # Remplacer le placeholder VERSION par la version Git réelle
+          echo "[INFO] Configuring APP_VERSION in deployment: ${VERSION}"
+          sed -i "s/VERSION_PLACEHOLDER/${VERSION}/g" k8s/deployment.yaml
 
           # Créer le namespace si nécessaire
           kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
@@ -551,6 +555,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
           echo "- **[Scalar API Docs](http://${K3S_IP}:30081/scalar)** - Interactive interface" >> $GITHUB_STEP_SUMMARY
+          echo "- **[Version Info](http://${K3S_IP}:30081/version)** - App version" >> $GITHUB_STEP_SUMMARY
           echo "- **[Health Check](http://${K3S_IP}:30081/health)** - API status" >> $GITHUB_STEP_SUMMARY
           echo "- **[Swagger JSON](http://${K3S_IP}:30081/api-docs/swagger.json)** - OpenAPI specification" >> $GITHUB_STEP_SUMMARY
           echo "- **[Register](http://${K3S_IP}:30081/api/auth/register)** - Create account" >> $GITHUB_STEP_SUMMARY

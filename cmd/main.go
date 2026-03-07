@@ -91,11 +91,14 @@ func main() {
 			return
 		}
 		
-		// Remplacer localhost:8081 par l'IP publique si définie
+		// Remplacer le placeholder par l'IP publique si définie
 		swaggerStr := string(data)
 		publicIP := os.Getenv("PUBLIC_IP")
 		if publicIP != "" {
-			swaggerStr = strings.ReplaceAll(swaggerStr, "localhost:8081", publicIP+":30081")
+			swaggerStr = strings.ReplaceAll(swaggerStr, "PUBLIC_IP_PLACEHOLDER", publicIP)
+		} else {
+			// Fallback vers localhost si PUBLIC_IP n'est pas définie
+			swaggerStr = strings.ReplaceAll(swaggerStr, "PUBLIC_IP_PLACEHOLDER:30081", "localhost:8081")
 		}
 		
 		c.Header("Content-Type", "application/json")
@@ -152,6 +155,18 @@ func main() {
 			return
 		}
 		c.JSON(200, gin.H{"status": "OK", "uptime": "Running"})
+	})
+
+	r.GET("/version", func(c *gin.Context) {
+		version := os.Getenv("APP_VERSION")
+		if version == "" {
+			version = "dev"
+		}
+		c.JSON(200, gin.H{
+			"version":    version,
+			"apiVersion": "0.0.24",
+			"service":    "auth-service",
+		})
 	})
 
 	authGroup := r.Group("/api/auth")
