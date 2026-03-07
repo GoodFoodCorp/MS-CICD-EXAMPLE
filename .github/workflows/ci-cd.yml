@@ -587,9 +587,9 @@ jobs:
           # Récupérer l'ID du compte AWS pour le nom du bucket
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           BUCKET_NAME="auth-service-tfstate-prod-${AWS_ACCOUNT_ID}"
-          
+
           echo "[INFO] Configuring S3 backend: ${BUCKET_NAME}"
-          
+
           # Créer le fichier backend
           cat > backend-override.tf <<EOF
           terraform {
@@ -600,7 +600,7 @@ jobs:
             }
           }
           EOF
-          
+
           # Initialiser avec le backend S3
           terraform init -reconfigure
 
