@@ -22,7 +22,7 @@ DEPLOYMENT="auth-service"
 clear
 
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}   📊 Monitoring - Auth Service${NC}"
+echo -e "${BLUE}   [INFO] Monitoring - Auth Service${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 

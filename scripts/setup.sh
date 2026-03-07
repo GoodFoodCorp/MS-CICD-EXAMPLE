@@ -30,48 +30,48 @@ MISSING_DEPS=()
 
 # Terraform
 if command -v terraform &> /dev/null; then
-  echo -e "  ${GREEN}✅ Terraform: $(terraform version -json | jq -r '.terraform_version')${NC}"
+  echo -e "  ${GREEN}[OK] Terraform: $(terraform version -json | jq -r '.terraform_version')${NC}"
 else
-  echo -e "  ${RED}❌ Terraform non installé${NC}"
+  echo -e "  ${RED}[ERROR] Terraform non installé${NC}"
   MISSING_DEPS+=("terraform")
 fi
 
 # AWS CLI
 if command -v aws &> /dev/null; then
-  echo -e "  ${GREEN}✅ AWS CLI: $(aws --version | cut -d' ' -f1)${NC}"
+  echo -e "  ${GREEN}[OK] AWS CLI: $(aws --version | cut -d' ' -f1)${NC}"
 else
-  echo -e "  ${RED}❌ AWS CLI non installé${NC}"
+  echo -e "  ${RED}[ERROR] AWS CLI non installé${NC}"
   MISSING_DEPS+=("aws-cli")
 fi
 
 # Docker
 if command -v docker &> /dev/null; then
-  echo -e "  ${GREEN}✅ Docker: $(docker --version | cut -d' ' -f3 | tr -d ',')${NC}"
+  echo -e "  ${GREEN}[OK] Docker: $(docker --version | cut -d' ' -f3 | tr -d ',')${NC}"
 else
-  echo -e "  ${RED}❌ Docker non installé${NC}"
+  echo -e "  ${RED}[ERROR] Docker non installé${NC}"
   MISSING_DEPS+=("docker")
 fi
 
 # kubectl
 if command -v kubectl &> /dev/null; then
-  echo -e "  ${GREEN}✅ kubectl: $(kubectl version --client --short 2>/dev/null | cut -d' ' -f3)${NC}"
+  echo -e "  ${GREEN}[OK] kubectl: $(kubectl version --client --short 2>/dev/null | cut -d' ' -f3)${NC}"
 else
-  echo -e "  ${RED}❌ kubectl non installé${NC}"
+  echo -e "  ${RED}[ERROR] kubectl non installé${NC}"
   MISSING_DEPS+=("kubectl")
 fi
 
 # jq
 if command -v jq &> /dev/null; then
-  echo -e "  ${GREEN}✅ jq: $(jq --version)${NC}"
+  echo -e "  ${GREEN}[OK] jq: $(jq --version)${NC}"
 else
-  echo -e "  ${RED}❌ jq non installé${NC}"
+  echo -e "  ${RED}[ERROR] jq non installé${NC}"
   MISSING_DEPS+=("jq")
 fi
 
 echo ""
 
 if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
-  echo -e "${RED}❌ Dépendances manquantes: ${MISSING_DEPS[*]}${NC}"
+  echo -e "${RED}[ERROR] Dépendances manquantes: ${MISSING_DEPS[*]}${NC}"
   echo -e "${YELLOW}Veuillez installer les dépendances manquantes avant de continuer.${NC}"
   exit 1
 fi
@@ -86,11 +86,11 @@ echo ""
 if aws sts get-caller-identity &> /dev/null; then
   ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
   REGION=$(aws configure get region || echo "eu-west-3")
-  echo -e "  ${GREEN}✅ AWS configuré${NC}"
+  echo -e "  ${GREEN}[OK] AWS configuré${NC}"
   echo -e "     Account ID: $ACCOUNT_ID"
   echo -e "     Région:     $REGION"
 else
-  echo -e "  ${RED}❌ AWS non configuré${NC}"
+  echo -e "  ${RED}[ERROR] AWS non configuré${NC}"
   echo ""
   echo -e "${YELLOW}Configurez AWS avec:${NC}"
   echo -e "  ${CYAN}aws configure${NC}"
@@ -107,17 +107,17 @@ echo -e "${YELLOW}3️⃣  Vérification de la clé SSH...${NC}"
 echo ""
 
 if [ -f ~/.ssh/id_rsa.pub ]; then
-  echo -e "  ${GREEN}✅ Clé SSH trouvée: ~/.ssh/id_rsa.pub${NC}"
+  echo -e "  ${GREEN}[OK] Clé SSH trouvée: ~/.ssh/id_rsa.pub${NC}"
 else
-  echo -e "  ${YELLOW}⚠️  Clé SSH non trouvée${NC}"
+  echo -e "  ${YELLOW}[WARNING]  Clé SSH non trouvée${NC}"
   echo ""
   echo -e "${YELLOW}Voulez-vous générer une nouvelle clé SSH ? (y/N)${NC}"
   read -r response
   if [[ "$response" =~ ^([yY][eE][sS]|[yY])$ ]]; then
     ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
-    echo -e "  ${GREEN}✅ Clé SSH générée${NC}"
+    echo -e "  ${GREEN}[OK] Clé SSH générée${NC}"
   else
-    echo -e "  ${RED}❌ Clé SSH requise pour le déploiement${NC}"
+    echo -e "  ${RED}[ERROR] Clé SSH requise pour le déploiement${NC}"
     exit 1
   fi
 fi
@@ -134,7 +134,7 @@ echo ""
 cd terraform
 
 if [ ! -f terraform.tfvars ]; then
-  echo -e "  ${YELLOW}⚠️  terraform.tfvars non trouvé${NC}"
+  echo -e "  ${YELLOW}[WARNING]  terraform.tfvars non trouvé${NC}"
   echo ""
   echo -e "${YELLOW}Création de terraform.tfvars...${NC}"
   
@@ -171,9 +171,9 @@ app_port        = 8081
 webhook_url     = "$WEBHOOK_URL"
 EOF
   
-  echo -e "  ${GREEN}✅ terraform.tfvars créé${NC}"
+  echo -e "  ${GREEN}[OK] terraform.tfvars créé${NC}"
 else
-  echo -e "  ${GREEN}✅ terraform.tfvars existe${NC}"
+  echo -e "  ${GREEN}[OK] terraform.tfvars existe${NC}"
 fi
 
 cd ..
@@ -202,7 +202,7 @@ echo -e "${YELLOW}6️⃣  Configuration des permissions...${NC}"
 echo ""
 
 chmod +x scripts/*.sh
-echo -e "  ${GREEN}✅ Scripts rendus exécutables${NC}"
+echo -e "  ${GREEN}[OK] Scripts rendus exécutables${NC}"
 echo ""
 
 # ═══════════════════════════════════════════════════════════
@@ -210,7 +210,7 @@ echo ""
 # ═══════════════════════════════════════════════════════════
 
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}✅ Setup terminé!${NC}"
+echo -e "${GREEN}[OK] Setup terminé!${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo -e "${YELLOW}📝 Prochaines étapes:${NC}"

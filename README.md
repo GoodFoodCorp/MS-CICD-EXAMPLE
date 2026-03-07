@@ -1,4 +1,4 @@
-# 🔐 Auth Service - CI/CD Complete
+# Auth Service - CI/CD Complete
 
 > Microservice d'authentification en Go avec pipeline CI/CD automatisé sur AWS + Kubernetes
 
@@ -8,20 +8,20 @@
 [![Cloud](https://img.shields.io/badge/Cloud-AWS-orange)](https://aws.amazon.com/)
 [![Go](https://img.shields.io/badge/Go-1.23-blue)](https://golang.org/)
 
-## ✨ Features
+## Features
 
-- 🔒 **Service d'authentification complet** (JWT, OAuth, 2FA)
-- 🚀 **CI/CD automatisé** avec GitHub Actions
-- 🏗️ **Infrastructure as Code** avec Terraform
-- ☸️ **Kubernetes** (K3s) avec auto-scaling (2-5 replicas)
-- 🗄️ **RDS PostgreSQL** sur AWS
-- 🔄 **Déploiement continu** avec rolling updates
-- 🔔 **Système de notifications** webhook
-- 📊 **Monitoring** et health checks
-- 🔐 **Security scanning** automatique
-- 🏷️ **Versioning automatique** avec tags GitHub
+- **Service d'authentification complet** (JWT, OAuth, 2FA)
+- **CI/CD automatisé** avec GitHub Actions
+- **Infrastructure as Code** avec Terraform
+- **Kubernetes** (K3s) avec auto-scaling (2-5 replicas)
+- **RDS PostgreSQL** sur AWS
+- **Déploiement continu** avec rolling updates
+- **Système de notifications** webhook
+- **Monitoring** et health checks
+- **Security scanning** automatique
+- **Versioning automatique** avec tags GitHub
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 # 1. Setup automatique
@@ -38,13 +38,13 @@ git push origin main
 
 Voir [QUICKSTART.md](QUICKSTART.md) pour le guide complet.
 
-## 📚 Documentation
+## Documentation
 
 - **[QUICKSTART.md](QUICKSTART.md)** - Démarrage rapide (5 min)
 - **[CICD-GUIDE.md](CICD-GUIDE.md)** - Guide complet CI/CD
 - **[Makefile](Makefile)** - Commandes disponibles
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 GitHub Actions → Build & Test → Security Scan → Docker Build → Deploy K8s
@@ -61,24 +61,24 @@ GitHub Actions → Build & Test → Security Scan → Docker Build → Deploy K8
 - **Infrastructure** : Terraform + AWS
 - **Monitoring** : Kubernetes health checks + HPA
 
-## 🎯 Pipeline CI/CD
+## Pipeline CI/CD
 
 Le pipeline se déclenche automatiquement sur push `main` :
 
-1. ✅ **Build & Test** - Compilation Go + tests + coverage
-2. 🔐 **Security Scan** - govulncheck + gosec + nancy
-3. 🏷️ **Versioning** - Tag automatique (SemVer)
-4. 🐳 **Docker Build** - Multi-stage + push Docker Hub
-5. 🚀 **Deploy** - Rolling update Kubernetes
-6. 🔔 **Notification** - Webhook de confirmation
+1. **Build & Test** - Compilation Go + tests + coverage
+2. **Security Scan** - govulncheck + gosec + nancy
+3. **Versioning** - Tag automatique (SemVer)
+4. **Docker Build** - Multi-stage + push Docker Hub
+5. **Deploy** - Rolling update Kubernetes
+6. **Notification** - Webhook de confirmation
 
 **Temps total** : ~10-15 minutes
 
-## 🔄 Auto-Update
+## Auto-Update
 
 Un service systemd vérifie toutes les 5 minutes s'il y a une nouvelle version sur Docker Hub et met à jour automatiquement l'application avec zero downtime.
 
-## 📊 Commandes utiles
+## Commandes utiles
 
 ```bash
 make help          # Afficher toutes les commandes
@@ -89,7 +89,7 @@ make rollback      # Rollback en cas de problème
 make ssh           # SSH vers le serveur
 ```
 
-## 🌐 API Endpoints
+## API Endpoints
 
 ```
 GET  /health              - Health check
@@ -101,16 +101,16 @@ GET  /api/profile         - Profile utilisateur
 
 Documentation complète : `http://<server-ip>:8081/docs`
 
-## 🔐 Sécurité
+## Sécurité
 
-- ✅ Security scanning automatique (gosec, govulncheck)
-- ✅ Secrets Kubernetes
-- ✅ RDS dans subnet privé
-- ✅ Security groups restrictifs
-- ✅ Image Docker distroless
-- ✅ User non-root
+- Security scanning automatique (gosec, govulncheck)
+- Secrets Kubernetes
+- RDS dans subnet privé
+- Security groups restrictifs
+- Image Docker distroless
+- User non-root
 
-## 📈 Coûts AWS
+## Coûts AWS
 
 Estimation : **~$53/mois**
 
@@ -118,7 +118,7 @@ Estimation : **~$53/mois**
 - RDS db.t3.micro : ~$15
 - EIP + Data Transfer : ~$8
 
-## 🛠️ Développement local
+## Développement local
 
 ```bash
 # Installer les dépendances
@@ -134,7 +134,7 @@ make docker-run
 make test
 ```
 
-## 📦 Structure du projet
+## Structure du projet
 
 ```
 .
@@ -224,4 +224,5 @@ Ce projet est sous licence MIT.
 ---
 
 **Made with ❤️ by MAALSI Team**
+
 # Infrastructure re-déployée avec fix curl

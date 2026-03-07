@@ -378,17 +378,17 @@ jobs:
 
           # Attendre que le serveur soit accessible via SSH
           echo "[INFO] Checking SSH accessibility of ${K3S_IP}..."
-          MAX_SSH_RETRIES=10
+          MAX_SSH_RETRIES=6
           SSH_RETRY=0
           while [ $SSH_RETRY -lt $MAX_SSH_RETRIES ]; do
-            if ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 -o StrictHostKeyChecking=no ec2-user@${K3S_IP} "echo 'SSH OK'" &>/dev/null; then
+            if ssh -i ~/.ssh/id_rsa -o ConnectTimeout=5 -o StrictHostKeyChecking=no ec2-user@${K3S_IP} "echo 'SSH OK'" &>/dev/null; then
               echo "[OK] SSH server accessible"
               break
             else
               SSH_RETRY=$((SSH_RETRY + 1))
               if [ $SSH_RETRY -lt $MAX_SSH_RETRIES ]; then
-                echo "[WAIT] SSH not ready yet (attempt $SSH_RETRY/$MAX_SSH_RETRIES), waiting 15s..."
-                sleep 15
+                echo "[WAIT] SSH not ready yet (attempt $SSH_RETRY/$MAX_SSH_RETRIES), waiting 5s..."
+                sleep 5
               else
                 echo "[ERROR] Unable to connect via SSH after $MAX_SSH_RETRIES attempts"
                 exit 1
@@ -398,17 +398,17 @@ jobs:
 
           # Attendre que le script user-data.sh soit terminé (flag .k3s-ready)
           echo "[INFO] Waiting for initialization script to complete..."
-          MAX_INIT_RETRIES=30
+          MAX_INIT_RETRIES=10
           INIT_RETRY=0
           while [ $INIT_RETRY -lt $MAX_INIT_RETRIES ]; do
-            if ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 ec2-user@${K3S_IP} "test -f /home/ec2-user/.k3s-ready"; then
+            if ssh -i ~/.ssh/id_rsa -o ConnectTimeout=5 ec2-user@${K3S_IP} "test -f /home/ec2-user/.k3s-ready"; then
               echo "[OK] Initialization script completed"
               break
             else
               INIT_RETRY=$((INIT_RETRY + 1))
               if [ $INIT_RETRY -lt $MAX_INIT_RETRIES ]; then
-                echo "[WAIT] Initialization in progress (attempt $INIT_RETRY/$MAX_INIT_RETRIES), waiting 20s..."
-                sleep 20
+                echo "[WAIT] Initialization in progress (attempt $INIT_RETRY/$MAX_INIT_RETRIES), waiting 10s..."
+                sleep 10
               else
                 echo "[ERROR] Timeout: initialization not completed after $MAX_INIT_RETRIES attempts"
                 echo "[DEBUG] Checking initialization logs:"
@@ -418,45 +418,23 @@ jobs:
             fi
           done
 
-          # Attendre que le fichier kubeconfig existe
-          echo "[INFO] Checking kubeconfig file existence..."
-          MAX_FILE_RETRIES=5
-          FILE_RETRY=0
-          while [ $FILE_RETRY -lt $MAX_FILE_RETRIES ]; do
-            if ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 ec2-user@${K3S_IP} "test -f /home/ec2-user/.kube/config"; then
-              echo "[OK] Kubeconfig file exists"
-              break
-            else
-              FILE_RETRY=$((FILE_RETRY + 1))
-              if [ $FILE_RETRY -lt $MAX_FILE_RETRIES ]; then
-                echo "[WAIT] Kubeconfig not created yet (attempt $FILE_RETRY/$MAX_FILE_RETRIES), waiting 10s..."
-                sleep 10
-              else
-                echo "[ERROR] Kubeconfig file not found after $MAX_FILE_RETRIES attempts"
-                echo "[DEBUG] .kube directory contents:"
-                ssh -i ~/.ssh/id_rsa ec2-user@${K3S_IP} "ls -la /home/ec2-user/.kube/ || echo '.kube directory not found'"
-                echo "[DEBUG] K3s logs:"
-                ssh -i ~/.ssh/id_rsa ec2-user@${K3S_IP} "sudo tail -50 /var/log/user-data.log" || true
-                exit 1
-              fi
-            fi
-          done
-
-          # Télécharger le kubeconfig avec retry
+          # Télécharger le kubeconfig directement (pas besoin de vérifier l'existence d'abord)
           echo "[INFO] Downloading kubeconfig..."
-          MAX_SCP_RETRIES=5
+          MAX_SCP_RETRIES=3
           SCP_RETRY=0
           while [ $SCP_RETRY -lt $MAX_SCP_RETRIES ]; do
-            if scp -i ~/.ssh/id_rsa -o ConnectTimeout=30 ec2-user@${K3S_IP}:/home/ec2-user/.kube/config kubeconfig.yaml; then
+            if scp -i ~/.ssh/id_rsa -o ConnectTimeout=10 ec2-user@${K3S_IP}:/home/ec2-user/.kube/config kubeconfig.yaml 2>/dev/null; then
               echo "[OK] Kubeconfig retrieved"
               break
             else
               SCP_RETRY=$((SCP_RETRY + 1))
               if [ $SCP_RETRY -lt $MAX_SCP_RETRIES ]; then
-                echo "[WARN] SCP attempt $SCP_RETRY failed, retrying in 10s..."
-                sleep 10
+                echo "[WAIT] Kubeconfig not ready (attempt $SCP_RETRY/$MAX_SCP_RETRIES), waiting 5s..."
+                sleep 5
               else
                 echo "[ERROR] Unable to retrieve kubeconfig after $MAX_SCP_RETRIES attempts"
+                echo "[DEBUG] K3s logs:"
+                ssh -i ~/.ssh/id_rsa ec2-user@${K3S_IP} "sudo tail -30 /var/log/user-data.log" || true
                 exit 1
               fi
             fi
@@ -473,7 +451,7 @@ jobs:
 
           # Tester la connexion avec retry
           echo "[INFO] Testing cluster connection..."
-          MAX_KUBECTL_RETRIES=5
+          MAX_KUBECTL_RETRIES=3
           KUBECTL_RETRY=0
           while [ $KUBECTL_RETRY -lt $MAX_KUBECTL_RETRIES ]; do
             if kubectl get nodes &>/dev/null; then
@@ -484,8 +462,8 @@ jobs:
             else
               KUBECTL_RETRY=$((KUBECTL_RETRY + 1))
               if [ $KUBECTL_RETRY -lt $MAX_KUBECTL_RETRIES ]; then
-                echo "[WAIT] Cluster not ready yet (attempt $KUBECTL_RETRY/$MAX_KUBECTL_RETRIES), waiting 10s..."
-                sleep 10
+                echo "[WAIT] Cluster not ready yet (attempt $KUBECTL_RETRY/$MAX_KUBECTL_RETRIES), waiting 5s..."
+                sleep 5
               else
                 echo "[ERROR] Unable to connect to cluster after $MAX_KUBECTL_RETRIES attempts"
                 exit 1
@@ -601,9 +579,30 @@ jobs:
           terraform_version: 1.6.0
           terraform_wrapper: false
 
-      - name: Terraform Init
+      - name: Configure S3 Backend
         working-directory: ./terraform
-        run: terraform init
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          # Récupérer l'ID du compte AWS pour le nom du bucket
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET_NAME="auth-service-tfstate-prod-${AWS_ACCOUNT_ID}"
+          
+          echo "[INFO] Configuring S3 backend: ${BUCKET_NAME}"
+          
+          # Créer le fichier backend
+          cat > backend-override.tf <<EOF
+          terraform {
+            backend "s3" {
+              bucket = "${BUCKET_NAME}"
+              key    = "terraform.tfstate"
+              region = "${AWS_REGION}"
+            }
+          }
+          EOF
+          
+          # Initialiser avec le backend S3
+          terraform init -reconfigure
 
       - name: Terraform Destroy
         working-directory: ./terraform

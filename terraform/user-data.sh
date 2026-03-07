@@ -13,26 +13,26 @@ echo "Début de l'initialisation K3s"
 echo "Date: $(date)"
 echo "=================================="
 
-# ═══════════════════════════════════════════════════════════
+# ---------------------------------------------------------
 # 1. Installation des dépendances
-# ═══════════════════════════════════════════════════════════
+# ---------------------------------------------------------
 
-echo "📦 Installation des dépendances..."
+echo "[INSTALL] Installing system dependencies..."
 # Note: Amazon Linux 2023 a curl-minimal par défaut qui peut causer des conflits
 # On utilise --allowerasing pour résoudre les conflits automatiquement
 yum update -y --skip-broken
 yum install -y wget git jq --skip-broken
 # Installer curl en permettant l'effacement de curl-minimal si nécessaire
-yum install -y curl --allowerasing || echo "⚠️ curl déjà installé ou curl-minimal présent"
+yum install -y curl --allowerasing || echo "[WARNING] curl déjà installé ou curl-minimal présent"
 
-# ═══════════════════════════════════════════════════════════
+# ---------------------------------------------------------
 # 2. Installation de K3s (Kubernetes léger)
-# ═══════════════════════════════════════════════════════════
+# ---------------------------------------------------------
 
-echo "🐳 Installation de K3s..."
+echo "[INSTALL] Installing K3s..."
 # Récupérer l'IP publique pour le certificat TLS
 PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
-echo "📍 IP publique: $PUBLIC_IP"
+echo "[INFO] IP publique: $PUBLIC_IP"
 
 curl -sfL https://get.k3s.io | sh -s - \
   --write-kubeconfig-mode 644 \
@@ -41,23 +41,23 @@ curl -sfL https://get.k3s.io | sh -s - \
   --node-name k3s-master
 
 # Attendre que K3s soit prêt
-echo "⏳ Attente du démarrage de K3s..."
+echo "[WAIT] Attente du démarrage de K3s..."
 while ! kubectl get nodes &> /dev/null; do
   sleep 5
 done
 
-echo "✅ K3s est opérationnel"
+echo "[OK] K3s est opérationnel"
 kubectl get nodes
 
 # ═══════════════════════════════════════════════════════════
-# 3. Configuration de kubectl pour l'utilisateur ec2-user
+# 3.[CONFIG] de kubectl pour l'utilisateur ec2-user
 # ═══════════════════════════════════════════════════════════
 
-echo "📝 Configuration du kubeconfig pour ec2-user..."
+echo "[CONFIG][CONFIG] du kubeconfig pour ec2-user..."
 
 # Attendre que le fichier kubeconfig de K3s soit créé
 KUBECONFIG_SOURCE="/etc/rancher/k3s/k3s.yaml"
-echo "⏳ Attente de la création du kubeconfig K3s..."
+echo "[WAIT] Attente de la création du kubeconfig K3s..."
 RETRIES=0
 MAX_RETRIES=30
 while [ ! -f "$KUBECONFIG_SOURCE" ] && [ $RETRIES -lt $MAX_RETRIES ]; do
@@ -67,11 +67,11 @@ while [ ! -f "$KUBECONFIG_SOURCE" ] && [ $RETRIES -lt $MAX_RETRIES ]; do
 done
 
 if [ ! -f "$KUBECONFIG_SOURCE" ]; then
-  echo "❌ ERREUR: Kubeconfig K3s introuvable après $MAX_RETRIES tentatives"
+  echo "[ERROR] ERREUR: Kubeconfig K3s introuvable après $MAX_RETRIES tentatives"
   exit 1
 fi
 
-echo "✅ Kubeconfig K3s trouvé"
+echo "[OK] Kubeconfig K3s trouvé"
 
 # Créer le répertoire et copier le kubeconfig
 mkdir -p /home/ec2-user/.kube
@@ -79,21 +79,32 @@ cp "$KUBECONFIG_SOURCE" /home/ec2-user/.kube/config
 chmod 644 /home/ec2-user/.kube/config
 chown -R ec2-user:ec2-user /home/ec2-user/.kube
 
-echo "✅ Kubeconfig configuré pour ec2-user"
+echo "[OK] Kubeconfig configuré pour ec2-user"
 ls -la /home/ec2-user/.kube/
 
 # ═══════════════════════════════════════════════════════════
-# 4. Création du namespace production
+# IMPORTANT: Créer le flag .k3s-ready maintenant !
+# La CI peut maintenant récupérer le kubeconfig et continuer
+# Le reste se termine en arrière-plan
 # ═══════════════════════════════════════════════════════════
 
-echo "📦 Création du namespace production..."
+touch /home/ec2-user/.k3s-ready
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /home/ec2-user/.k3s-ready
+chown ec2-user:ec2-user /home/ec2-user/.k3s-ready
+echo "[OK] Flag .k3s-ready créé - CI peut continuer"
+
+# ═══════════════════════════════════════════════════════════
+# 4.[CREATE] du namespace production
+# ═══════════════════════════════════════════════════════════
+
+echo "[CREATE] du namespace production..."
 kubectl create namespace production || true
 
 # ═══════════════════════════════════════════════════════════
-# 5. Création des secrets Kubernetes
+# 5.[CREATE] des secrets Kubernetes
 # ═══════════════════════════════════════════════════════════
 
-echo "🔐 Création des secrets..."
+echo "[CREATE] des secrets..."
 
 # Secret pour la base de données
 kubectl create secret generic db-credentials \
@@ -119,17 +130,17 @@ kubectl create secret generic database-url \
   --namespace=production \
   --dry-run=client -o yaml | kubectl apply -f -
 
-echo "✅ Secrets créés avec succès"
+echo "[OK] Secrets créés avec succès"
 
 # ═══════════════════════════════════════════════════════════
 # 6. Attendre que RDS soit accessible
 # ═══════════════════════════════════════════════════════════
 
-echo "⏳ Vérification de la connexion à RDS..."
+echo "[WAIT] Vérification de la connexion à RDS..."
 DB_HOST=$(echo ${db_endpoint} | cut -d':' -f1)
 for i in {1..60}; do
   if timeout 5 bash -c "echo > /dev/tcp/$DB_HOST/5432" 2>/dev/null; then
-    echo "✅ RDS est accessible"
+    echo "[OK] RDS est accessible"
     break
   fi
   echo "Tentative $i/60..."
@@ -137,10 +148,10 @@ for i in {1..60}; do
 done
 
 # ═══════════════════════════════════════════════════════════
-# 7. Déploiement des manifestes Kubernetes
+# 7.[DEPLOY] des manifestes Kubernetes
 # ═══════════════════════════════════════════════════════════
 
-echo "🚀 Déploiement de l'application..."
+echo "[DEPLOY][DEPLOY] de l'application..."
 
 # Créer les manifestes K8s
 cat > /tmp/auth-deployment.yaml <<'EOF'
@@ -261,14 +272,14 @@ EOF
 # Appliquer les manifestes
 kubectl apply -f /tmp/auth-deployment.yaml
 
-echo "⏳ Attente du déploiement..."
+echo "[WAIT] Attente du déploiement..."
 kubectl rollout status deployment/auth-service -n production --timeout=5m
 
 # ═══════════════════════════════════════════════════════════
-# 8. Installation du service de mise à jour automatique
+# 8.[INSTALL] du service de mise à jour automatique
 # ═══════════════════════════════════════════════════════════
 
-echo "🔄 Installation du service de mise à jour automatique..."
+echo "[INSTALL] du service de mise à jour automatique..."
 
 cat > /usr/local/bin/check-updates.sh <<'SCRIPT'
 #!/bin/bash
@@ -306,7 +317,7 @@ if [ "$CURRENT_TAG" != "$LATEST_TAG" ] && [ ! -z "$LATEST_TAG" ]; then
   # Attendre le rollout
   kubectl rollout status deployment/$DEPLOYMENT -n $NAMESPACE
   
-  # Notification de succès
+  #[NOTIFY] de succès
   curl -X POST "$WEBHOOK_URL" \
     -H "Content-Type: application/json" \
     -d "{
@@ -317,7 +328,7 @@ if [ "$CURRENT_TAG" != "$LATEST_TAG" ] && [ ! -z "$LATEST_TAG" ]; then
       \"status\": \"success\"
     }" 2>/dev/null
   
-  echo "✅ Mise à jour terminée vers $LATEST_TAG"
+  echo "[OK] Mise à jour terminée vers $LATEST_TAG"
 else
   echo "✓ Déjà à jour (version: $CURRENT_TAG)"
 fi
@@ -360,19 +371,19 @@ systemctl daemon-reload
 systemctl enable auth-updater.timer
 systemctl start auth-updater.timer
 
-echo "✅ Service de mise à jour automatique installé"
+echo "[OK] Service de mise à jour automatique installé"
 
 # ═══════════════════════════════════════════════════════════
-# 9. Configuration du firewall
+# 9.[CONFIG] du firewall
 # ═══════════════════════════════════════════════════════════
 
-echo "🔥 Configuration du firewall..."
+echo "[CONFIG] du firewall..."
 # Autoriser le trafic sur le port de l'application
 iptables -I INPUT -p tcp --dport ${app_port} -j ACCEPT
 iptables -I INPUT -p tcp --dport 30081 -j ACCEPT
 
 # ═══════════════════════════════════════════════════════════
-# 10. Notification de fin d'installation
+# 10.[NOTIFY] de fin d'installation
 # ═══════════════════════════════════════════════════════════
 
 PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
@@ -385,17 +396,13 @@ curl -X POST "${webhook_url}" \
     \"public_ip\": \"$PUBLIC_IP\",
     \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
     \"status\": \"ready\"
-  }" 2>/dev/null || echo "⚠️ Notification webhook failed"
+  }" 2>/dev/null || echo "[WARNING][NOTIFY] webhook failed"
 
 echo "=================================="
-echo "✅ Installation terminée!"
+echo "[OK][INSTALL] terminée!"
 echo "Date: $(date)"
 echo "IP publique: $PUBLIC_IP"
 echo "Port: ${app_port}"
 echo "=================================="
 
-# Créer un fichier flag pour indiquer que l'installation est terminée
-touch /home/ec2-user/.k3s-ready
-echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /home/ec2-user/.k3s-ready
-chown ec2-user:ec2-user /home/ec2-user/.k3s-ready
-echo "✅ Fichier flag créé: /home/ec2-user/.k3s-ready"
+# Note: Le flag .k3s-ready a déjà été créé plus tôt pour que la CI puisse continuer

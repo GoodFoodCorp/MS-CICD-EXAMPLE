@@ -19,7 +19,7 @@ ENVIRONMENT="prod"
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 BUCKET_NAME="${PROJECT_NAME}-tfstate-${ENVIRONMENT}-${AWS_ACCOUNT_ID}"
 
-echo "🚀 Initialisation du déploiement Terraform CI/CD"
+echo "[DEPLOY] Initialisation du déploiement Terraform CI/CD"
 echo "   Région: ${REGION}"
 echo "   Projet: ${PROJECT_NAME}"
 echo "   Compte AWS: ${AWS_ACCOUNT_ID}"
@@ -28,7 +28,7 @@ echo ""
 # ═══════════════════════════════════════════════════════════
 # Étape 1 : Vérifier/Créer le backend S3 (sans DynamoDB)
 # ═══════════════════════════════════════════════════════════
-echo "📦 Vérification du backend S3..."
+echo " Vérification du backend S3..."
 
 if ! aws s3 ls "s3://${BUCKET_NAME}" 2>/dev/null; then
     echo "   ➜ Création du bucket S3 ${BUCKET_NAME}..."
@@ -54,9 +54,9 @@ if ! aws s3 ls "s3://${BUCKET_NAME}" 2>/dev/null; then
         --public-access-block-configuration \
         BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true 2>/dev/null
     
-    echo "   ✅ Bucket S3 créé et configuré"
+    echo "   [OK] Bucket S3 créé et configuré"
 else
-    echo "   ✅ Bucket S3 existe déjà"
+    echo "   [OK] Bucket S3 existe déjà"
 fi
 
 # ═══════════════════════════════════════════════════════════
@@ -76,7 +76,7 @@ terraform {
 }
 EOF
 
-echo "   ✅ Backend configuré:"
+echo "   [OK] Backend configuré:"
 echo "      Bucket: ${BUCKET_NAME}"
 echo "      Region: ${REGION}"
 
@@ -91,7 +91,7 @@ terraform init -reconfigure
 # Étape 4 : Importer les ressources existantes si nécessaire
 # ═══════════════════════════════════════════════════════════
 echo ""
-echo "🔍 Vérification et import des ressources existantes..."
+echo "[CHECK] Vérification et import des ressources existantes..."
 
 import_if_exists() {
     local resource_type=$1
@@ -100,20 +100,20 @@ import_if_exists() {
     
     # Vérifier si la ressource est déjà dans l'état Terraform
     if terraform state show "${resource_type}.${resource_name}" &>/dev/null; then
-        echo "   ✅ ${resource_type}.${resource_name} déjà dans l'état"
+        echo "   [OK] ${resource_type}.${resource_name} déjà dans l'état"
         return 0
     fi
     
     # Tenter l'import
     echo "   ➜ Import de ${resource_type}.${resource_name} (${aws_id})..."
     if terraform import -input=false "${resource_type}.${resource_name}" "${aws_id}" 2>&1 | tee /tmp/tf-import.log; then
-        echo "   ✅ Import réussi"
+        echo "   [OK] Import réussi"
         return 0
     else
         if grep -q "Cannot import non-existent" /tmp/tf-import.log || grep -q "does not exist" /tmp/tf-import.log; then
-            echo "   ℹ️  Ressource n'existe pas dans AWS (sera créée)"
+            echo "   [INFO]  Ressource n'existe pas dans AWS (sera créée)"
         else
-            echo "   ⚠️  Import échoué (voir logs)"
+            echo "   [WARNING]  Import échoué (voir logs)"
         fi
         return 1
     fi
@@ -121,21 +121,21 @@ import_if_exists() {
 
 # Importer les ressources clés
 echo ""
-echo "   🔑 Vérification Key Pair..."
+echo "    Vérification Key Pair..."
 if aws ec2 describe-key-pairs --region "${REGION}" --key-names "${PROJECT_NAME}-key" &>/dev/null; then
     echo "      ➜ Key pair existe dans AWS, import..."
     import_if_exists "aws_key_pair" "deployer" "${PROJECT_NAME}-key" || true
 else
-    echo "      ℹ️  Key pair n'existe pas (sera créée)"
+    echo "      [INFO]  Key pair n'existe pas (sera créée)"
 fi
 
 echo ""
-echo "   📊 Vérification DB Subnet Group..."
+echo "   [INFO] Vérification DB Subnet Group..."
 if aws rds describe-db-subnet-groups --region "${REGION}" --db-subnet-group-name "${PROJECT_NAME}-db-subnet-group" &>/dev/null; then
     echo "      ➜ DB Subnet Group existe dans AWS, import..."
     import_if_exists "aws_db_subnet_group" "main" "${PROJECT_NAME}-db-subnet-group" || true
 else
-    echo "      ℹ️  DB Subnet Group n'existe pas (sera créé)"
+    echo "      [INFO]  DB Subnet Group n'existe pas (sera créé)"
 fi
 
 # Vérifier les VPCs existants du projet
@@ -148,27 +148,27 @@ VPC_IDS=$(aws ec2 describe-vpcs --region "${REGION}" \
 
 if [ -n "$VPC_IDS" ]; then
     VPC_COUNT=$(echo "$VPC_IDS" | wc -w | tr -d ' ')
-    echo "      ⚠️  ${VPC_COUNT} VPC(s) trouvé(s) avec le tag Project=${PROJECT_NAME}"
+    echo "      [WARNING]  ${VPC_COUNT} VPC(s) trouvé(s) avec le tag Project=${PROJECT_NAME}"
     echo "      IDs: ${VPC_IDS}"
     
     # Vérifier la limite totale
     TOTAL_VPCS=$(aws ec2 describe-vpcs --region "${REGION}" --query 'Vpcs | length(@)' --output text)
     if [ "$TOTAL_VPCS" -ge 5 ]; then
         echo ""
-        echo "      ❌ ATTENTION : Limite de VPCs atteinte (${TOTAL_VPCS}/5)"
+        echo "      [ERROR] ATTENTION : Limite de VPCs atteinte (${TOTAL_VPCS}/5)"
         echo "      Terraform ne pourra pas créer de nouveau VPC."
         echo "      Supprimez les VPCs non utilisés ou importez un VPC existant."
         echo ""
     fi
 else
-    echo "      ℹ️  Aucun VPC du projet trouvé"
+    echo "      [INFO]  Aucun VPC du projet trouvé"
 fi
 
 # ═══════════════════════════════════════════════════════════
 # Étape 5 : Planifier les changements
 # ═══════════════════════════════════════════════════════════
 echo ""
-echo "📋 Planification des changements..."
+echo "[LOG] Planification des changements..."
 
 # Créer un plan et capturer le statut
 if terraform plan -detailed-exitcode -out=tfplan; then
@@ -184,7 +184,7 @@ fi
 
 if [ $PLAN_EXIT_CODE -eq 0 ]; then
     echo ""
-    echo "✅ Infrastructure à jour - Aucun changement nécessaire"
+    echo "[OK] Infrastructure à jour - Aucun changement nécessaire"
     echo "TERRAFORM_CHANGES=false" >> "$GITHUB_OUTPUT"
     exit 0
 elif [ $PLAN_EXIT_CODE -eq 2 ]; then
@@ -193,7 +193,7 @@ elif [ $PLAN_EXIT_CODE -eq 2 ]; then
     echo "TERRAFORM_CHANGES=true" >> "$GITHUB_OUTPUT"
 elif [ $PLAN_EXIT_CODE -eq 1 ]; then
     echo ""
-    echo "❌ Erreur lors de la planification"
+    echo "[ERROR] Erreur lors de la planification"
     exit 1
 fi
 
@@ -201,14 +201,14 @@ fi
 # Étape 6 : Appliquer les changements
 # ═══════════════════════════════════════════════════════════
 echo ""
-echo "🚀 Application des changements..."
+echo "[DEPLOY] Application des changements..."
 
 if terraform apply -auto-approve tfplan; then
     echo ""
-    echo "✅ Infrastructure déployée avec succès"
+    echo "[OK] Infrastructure déployée avec succès"
 else
     echo ""
-    echo "❌ Erreur lors de l'application"
+    echo "[ERROR] Erreur lors de l'application"
     exit 1
 fi
 
@@ -221,15 +221,15 @@ echo "📤 Récupération des outputs Terraform..."
 if terraform output k3s_public_ip &>/dev/null; then
     K3S_IP=$(terraform output -raw k3s_public_ip)
     echo "K3S_IP=${K3S_IP}" >> "$GITHUB_OUTPUT"
-    echo "   ✅ IP K3s: ${K3S_IP}"
+    echo "   [OK] IP K3s: ${K3S_IP}"
     
     # Sauvegarder la clé SSH
     terraform output -raw ssh_private_key > ../ssh_key.pem
     chmod 600 ../ssh_key.pem
-    echo "   ✅ Clé SSH sauvegardée"
+    echo "   [OK] Clé SSH sauvegardée"
 else
-    echo "   ⚠️  Pas d'output k3s_public_ip (normal si infra déjà existante)"
+    echo "   [WARNING]  Pas d'output k3s_public_ip (normal si infra déjà existante)"
 fi
 
 echo ""
-echo "✅ Déploiement Terraform terminé avec succès!"
+echo "[OK] Déploiement Terraform terminé avec succès!"

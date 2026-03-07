@@ -5,7 +5,7 @@
 
 set -e
 
-echo "🔍 Vérification de la configuration CI/CD..."
+echo "[CHECK] Vérification de la configuration CI/CD..."
 echo ""
 
 ERRORS=0
@@ -19,11 +19,11 @@ echo "1️⃣  Vérification des credentials AWS..."
 if aws sts get-caller-identity &>/dev/null; then
     ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
     USER=$(aws sts get-caller-identity --query Arn --output text | cut -d'/' -f2)
-    echo "   ✅ Credentials AWS valides"
+    echo "   [OK] Credentials AWS valides"
     echo "      Compte: ${ACCOUNT}"
     echo "      User: ${USER}"
 else
-    echo "   ❌ Credentials AWS invalides"
+    echo "   [ERROR] Credentials AWS invalides"
     echo "      Assurez-vous que vos credentials sont configurés"
     ((ERRORS++))
 fi
@@ -43,9 +43,9 @@ REQUIRED_FILES=(
 
 for file in "${REQUIRED_FILES[@]}"; do
     if [ -f "$file" ]; then
-        echo "   ✅ $file"
+        echo "   [OK] $file"
     else
-        echo "   ❌ $file manquant"
+        echo "   [ERROR] $file manquant"
         ((ERRORS++))
     fi
 done
@@ -57,7 +57,7 @@ echo ""
 echo "3️⃣  Vérification du backend S3 dans provider.tf..."
 
 if grep -q 'backend "s3"' terraform/provider.tf; then
-    echo "   ✅ Backend S3 configuré"
+    echo "   [OK] Backend S3 configuré"
     
     # Vérifier le bucket dans la config
     BUCKET=$(grep 'bucket' terraform/provider.tf | grep -v '#' | awk -F'"' '{print $2}' | head -1)
@@ -65,7 +65,7 @@ if grep -q 'backend "s3"' terraform/provider.tf; then
         echo "      Bucket: ${BUCKET}"
     fi
 else
-    echo "   ⚠️  Backend S3 non configuré (sera créé par la CI)"
+    echo "   [WARNING]  Backend S3 non configuré (sera créé par la CI)"
     ((WARNINGS++))
 fi
 
@@ -76,17 +76,17 @@ echo ""
 echo "4️⃣  Vérification du workflow GitHub Actions..."
 
 if [ -f ".github/workflows/ci-cd.yml" ]; then
-    echo "   ✅ Workflow CI/CD présent"
+    echo "   [OK] Workflow CI/CD présent"
     
     # Vérifier que le job terraform utilise le script ci-deploy.sh
     if grep -q "ci-deploy.sh" .github/workflows/ci-cd.yml; then
-        echo "   ✅ Script ci-deploy.sh utilisé dans le workflow"
+        echo "   [OK] Script ci-deploy.sh utilisé dans le workflow"
     else
-        echo "   ⚠️  Script ci-deploy.sh non utilisé dans le workflow"
+        echo "   [WARNING]  Script ci-deploy.sh non utilisé dans le workflow"
         ((WARNINGS++))
     fi
 else
-    echo "   ❌ Workflow CI/CD manquant"
+    echo "   [ERROR] Workflow CI/CD manquant"
     ((ERRORS++))
 fi
 
@@ -116,7 +116,7 @@ if aws sts get-caller-identity &>/dev/null; then
     echo "   VPCs utilisés: ${VPC_COUNT}/5"
     
     if [ "$VPC_COUNT" != "?" ] && [ "$VPC_COUNT" -ge 5 ]; then
-        echo "   ⚠️  Limite de VPCs atteinte! Supprimez des VPCs non utilisés"
+        echo "   [WARNING]  Limite de VPCs atteinte! Supprimez des VPCs non utilisés"
         ((WARNINGS++))
     fi
     
@@ -137,12 +137,12 @@ if aws sts get-caller-identity &>/dev/null; then
     
     # Key pair
     if aws ec2 describe-key-pairs --region "${REGION}" --key-names "${PROJECT_NAME}-key" &>/dev/null; then
-        echo "   ⚠️  Key pair ${PROJECT_NAME}-key existe (sera importée auto)"
+        echo "   [WARNING]  Key pair ${PROJECT_NAME}-key existe (sera importée auto)"
     fi
     
     # DB Subnet Group
     if aws rds describe-db-subnet-groups --region "${REGION}" --db-subnet-group-name "${PROJECT_NAME}-db-subnet-group" &>/dev/null; then
-        echo "   ⚠️  DB Subnet Group existe (sera importé auto)"
+        echo "   [WARNING]  DB Subnet Group existe (sera importé auto)"
     fi
     
     # VPCs du projet
@@ -152,7 +152,7 @@ if aws sts get-caller-identity &>/dev/null; then
         --output text 2>/dev/null)
     
     if [ -n "$VPC_IDS" ]; then
-        echo "   ⚠️  VPCs du projet trouvés: ${VPC_IDS}"
+        echo "   [WARNING]  VPCs du projet trouvés: ${VPC_IDS}"
         echo "      (Si problème, utilisez ./terraform/auto-cleanup.sh)"
     fi
 fi
@@ -162,27 +162,27 @@ fi
 # ═══════════════════════════════════════════════════════════
 echo ""
 echo "═══════════════════════════════════════════════════════════"
-echo "📊 Résumé de la vérification"
+echo "[INFO] Résumé de la vérification"
 echo "═══════════════════════════════════════════════════════════"
 echo "   Erreurs: ${ERRORS}"
 echo "   Avertissements: ${WARNINGS}"
 echo ""
 
 if [ $ERRORS -eq 0 ]; then
-    echo "✅ Configuration prête pour le déploiement!"
+    echo "[OK] Configuration prête pour le déploiement!"
     echo ""
     echo "📝 Prochaines étapes:"
     echo "   1. git add ."
     echo "   2. git commit -m 'feat: configuration CI/CD automatique'"
     echo "   3. git push origin main"
     echo ""
-    echo "🚀 La CI/CD gérera automatiquement:"
+    echo "[DEPLOY] La CI/CD gérera automatiquement:"
     echo "   • Création du backend S3"
     echo "   • Import des ressources existantes"
     echo "   • Déploiement de l'infrastructure (si nécessaire)"
     echo "   • Déploiement de l'application sur Kubernetes"
     exit 0
 else
-    echo "❌ Corrigez les erreurs avant de continuer"
+    echo "[ERROR] Corrigez les erreurs avant de continuer"
     exit 1
 fi

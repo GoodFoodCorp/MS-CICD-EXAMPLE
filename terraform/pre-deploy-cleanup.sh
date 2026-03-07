@@ -15,36 +15,36 @@ echo ""
 # ═══════════════════════════════════════════════════════════
 # 1. Supprimer la key pair si elle existe
 # ═══════════════════════════════════════════════════════════
-echo "🔑 Nettoyage Key Pair..."
+echo " Nettoyage Key Pair..."
 KEY_PAIR="${PROJECT_NAME}-key"
 
 if aws ec2 describe-key-pairs --region "${REGION}" --key-names "${KEY_PAIR}" &>/dev/null; then
     echo "   ➜ Suppression de ${KEY_PAIR}..."
     aws ec2 delete-key-pair --region "${REGION}" --key-name "${KEY_PAIR}"
-    echo "   ✅ Key pair supprimée"
+    echo "   [OK] Key pair supprimée"
 else
-    echo "   ℹ️  Key pair n'existe pas"
+    echo "   [INFO]  Key pair n'existe pas"
 fi
 
 # ═══════════════════════════════════════════════════════════
 # 2. Supprimer le DB Subnet Group si possible
 # ═══════════════════════════════════════════════════════════
 echo ""
-echo "📊 Nettoyage DB Subnet Group..."
+echo "[INFO] Nettoyage DB Subnet Group..."
 SUBNET_GROUP="${PROJECT_NAME}-db-subnet-group"
 
 # Vérifier si une instance RDS utilise ce subnet group
 DB_IDENTIFIER="${PROJECT_NAME}-postgres"
 if aws rds describe-db-instances --region "${REGION}" --db-instance-identifier "${DB_IDENTIFIER}" &>/dev/null; then
-    echo "   ⚠️  Instance RDS ${DB_IDENTIFIER} existe encore"
-    echo "   ℹ️  Le subnet group ne peut pas être supprimé"
+    echo "   [WARNING]  Instance RDS ${DB_IDENTIFIER} existe encore"
+    echo "   [INFO]  Le subnet group ne peut pas être supprimé"
 else
     if aws rds describe-db-subnet-groups --region "${REGION}" --db-subnet-group-name "${SUBNET_GROUP}" &>/dev/null; then
         echo "   ➜ Suppression du subnet group ${SUBNET_GROUP}..."
         aws rds delete-db-subnet-group --region "${REGION}" --db-subnet-group-name "${SUBNET_GROUP}"
-        echo "   ✅ Subnet group supprimé"
+        echo "   [OK] Subnet group supprimé"
     else
-        echo "   ℹ️  Subnet group n'existe pas"
+        echo "   [INFO]  Subnet group n'existe pas"
     fi
 fi
 
@@ -59,7 +59,7 @@ echo "   Total VPCs dans la région: ${TOTAL_VPCS}/5"
 
 if [ "$TOTAL_VPCS" -ge 5 ]; then
     echo ""
-    echo "   ⚠️  LIMITE ATTEINTE ! Détails des VPCs:"
+    echo "   [WARNING]  LIMITE ATTEINTE ! Détails des VPCs:"
     echo ""
     
     aws ec2 describe-vpcs --region "${REGION}" \
@@ -76,7 +76,7 @@ if [ "$TOTAL_VPCS" -ge 5 ]; then
             --query "DBInstances[?DBSubnetGroup.VpcId=='${VPC_ID}'].DBInstanceIdentifier" \
             --output text | wc -w | tr -d ' ')
         
-        echo "   📦 VPC: ${VPC_ID}"
+        echo "    VPC: ${VPC_ID}"
         echo "      CIDR: ${CIDR}"
         echo "      Name: ${NAME:-N/A}"
         echo "      Project: ${PROJECT:-N/A}"
@@ -84,7 +84,7 @@ if [ "$TOTAL_VPCS" -ge 5 ]; then
         echo "      Instances RDS: ${RDS}"
         
         if [ "${PROJECT}" = "${PROJECT_NAME}" ] && [ "${INSTANCES}" = "0" ] && [ "${RDS}" = "0" ]; then
-            echo "      ✅ Ce VPC du projet est vide (peut être supprimé)"
+            echo "      [OK] Ce VPC du projet est vide (peut être supprimé)"
         fi
         echo ""
     done
@@ -115,19 +115,19 @@ echo "🔧 Nettoyage des fichiers Terraform locaux..."
 if [ -f "terraform.tfstate" ]; then
     echo "   ➜ Suppression de terraform.tfstate local..."
     rm -f terraform.tfstate terraform.tfstate.backup
-    echo "   ✅ État local supprimé"
+    echo "   [OK] État local supprimé"
 fi
 
 if [ -f "backend-override.tf" ]; then
     echo "   ➜ Suppression de backend-override.tf..."
     rm -f backend-override.tf
-    echo "   ✅ Backend override supprimé"
+    echo "   [OK] Backend override supprimé"
 fi
 
 if [ -d ".terraform" ]; then
     echo "   ➜ Nettoyage du dossier .terraform..."
     rm -rf .terraform
-    echo "   ✅ Dossier .terraform nettoyé"
+    echo "   [OK] Dossier .terraform nettoyé"
 fi
 
 # ═══════════════════════════════════════════════════════════
@@ -135,17 +135,17 @@ fi
 # ═══════════════════════════════════════════════════════════
 echo ""
 echo "═══════════════════════════════════════════════════════════"
-echo "✅ Nettoyage terminé"
+echo "[OK] Nettoyage terminé"
 echo "═══════════════════════════════════════════════════════════"
 
 if [ "$TOTAL_VPCS" -lt 5 ]; then
     echo ""
-    echo "🚀 Prêt pour le déploiement !"
+    echo "[DEPLOY] Prêt pour le déploiement !"
     echo "   Vous pouvez maintenant exécuter:"
     echo "   ./ci-deploy.sh"
 else
     echo ""
-    echo "⚠️  Action requise: Supprimez des VPCs pour continuer"
+    echo "[WARNING]  Action requise: Supprimez des VPCs pour continuer"
     echo "   La limite de VPCs (5) est atteinte."
     exit 1
 fi

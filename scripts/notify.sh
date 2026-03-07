@@ -50,16 +50,16 @@ EOF
   # Afficher dans la console avec couleur
   case $status in
     success)
-      echo -e "${GREEN}✅ [$event_type] $message${NC}"
+      echo -e "${GREEN}[OK] [$event_type] $message${NC}"
       ;;
     error|failed)
-      echo -e "${RED}❌ [$event_type] $message${NC}"
+      echo -e "${RED}[ERROR] [$event_type] $message${NC}"
       ;;
     warning)
-      echo -e "${YELLOW}⚠️  [$event_type] $message${NC}"
+      echo -e "${YELLOW}[WARNING]  [$event_type] $message${NC}"
       ;;
     *)
-      echo -e "${BLUE}ℹ️  [$event_type] $message${NC}"
+      echo -e "${BLUE}[INFO]  [$event_type] $message${NC}"
       ;;
   esac
   
@@ -155,7 +155,7 @@ if [ "$1" == "test" ]; then
   notify_scaling_event "2" "3"
   
   echo ""
-  echo "✅ Tests terminés"
+  echo "[OK] Tests terminés"
   exit 0
 fi
 

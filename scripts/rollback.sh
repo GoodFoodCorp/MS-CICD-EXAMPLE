@@ -49,9 +49,9 @@ fi
 
 # Attendre le rollout
 echo ""
-echo -e "${YELLOW}⏳ Attente du rollback...${NC}"
+echo -e "${YELLOW}[WAIT] Attente du rollback...${NC}"
 if kubectl rollout status deployment/$DEPLOYMENT -n $NAMESPACE --timeout=5m; then
-  echo -e "${GREEN}✅ Rollback réussi!${NC}"
+  echo -e "${GREEN}[OK] Rollback réussi!${NC}"
   
   # Notification
   if [ -f "$(dirname "$0")/notify.sh" ]; then
@@ -60,7 +60,7 @@ if kubectl rollout status deployment/$DEPLOYMENT -n $NAMESPACE --timeout=5m; the
     notify_rollback "unknown" "$CURRENT_IMAGE"
   fi
 else
-  echo -e "${RED}❌ Le rollback a échoué${NC}"
+  echo -e "${RED}[ERROR] Le rollback a échoué${NC}"
   exit 1
 fi
 
@@ -71,4 +71,4 @@ echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━�
 kubectl get pods -n $NAMESPACE -l app=$DEPLOYMENT
 
 echo ""
-echo -e "${GREEN}✅ Rollback terminé${NC}"
+echo -e "${GREEN}[OK] Rollback terminé${NC}"
