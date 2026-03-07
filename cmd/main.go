@@ -41,27 +41,52 @@ func main() {
 	}
 
 	dsn := os.Getenv("DATABASE_URL")
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		log.Fatal("Impossible de se connecter à la base de données:", err)
+	if dsn == "" {
+		log.Println("WARNING: DATABASE_URL non définie, l'app démarre sans DB")
 	}
 
-	err = db.AutoMigrate(
-		&models.Tenant{},
-		&models.User{},
-		&models.Role{},
-		&models.UserRole{},
-		&models.RefreshToken{},
-		&models.PasswordResetToken{},
-		&models.EmailVerificationToken{},
-	)
-	if err != nil {
-		log.Fatal("Echec de la migration DB:", err)
+	var db *gorm.DB
+	var err error
+
+	// Retry de connexion à la DB avec backoff
+	maxRetries := 10
+	for i := 0; i < maxRetries; i++ {
+		if dsn != "" {
+			db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+			if err == nil {
+				log.Println("Connexion à la base de données réussie")
+				break
+			}
+			if i < maxRetries-1 {
+				waitTime := time.Duration(i+1) * 2 * time.Second
+				log.Printf("Tentative %d/%d de connexion DB échouée, retry dans %v: %v", i+1, maxRetries, waitTime, err)
+				time.Sleep(waitTime)
+			}
+		} else {
+			break
+		}
 	}
 
-	// Seeder: créer tenant, rôles et admin par défaut
-	if err := seeder.Seed(db); err != nil {
-		log.Fatal("Echec du seeder:", err)
+	if db != nil {
+		err = db.AutoMigrate(
+			&models.Tenant{},
+			&models.User{},
+			&models.Role{},
+			&models.UserRole{},
+			&models.RefreshToken{},
+			&models.PasswordResetToken{},
+			&models.EmailVerificationToken{},
+		)
+		if err != nil {
+			log.Printf("WARNING: Echec de la migration DB: %v", err)
+		} else {
+			// Seeder: créer tenant, rôles et admin par défaut
+			if err := seeder.Seed(db); err != nil {
+				log.Printf("WARNING: Echec du seeder: %v", err)
+			}
+		}
+	} else {
+		log.Println("WARNING: Application démarrée sans connexion DB")
 	}
 
 	authRepo := repository.NewAuthRepository(db)
@@ -149,12 +174,16 @@ func main() {
 	limitMiddleware := middleware.RateLimitMiddleware()
 
 	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "OK", "uptime": "Running"})
+	})
+
+	r.GET("/health/db", func(c *gin.Context) {
 		sqlDB, _ := db.DB()
 		if err := sqlDB.Ping(); err != nil {
-			c.JSON(500, gin.H{"status": "DB Dead"})
+			c.JSON(500, gin.H{"status": "DB Dead", "error": err.Error()})
 			return
 		}
-		c.JSON(200, gin.H{"status": "OK", "uptime": "Running"})
+		c.JSON(200, gin.H{"status": "DB OK"})
 	})
 
 	r.GET("/version", func(c *gin.Context) {
