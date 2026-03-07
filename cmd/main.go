@@ -48,8 +48,8 @@ func main() {
 	var db *gorm.DB
 	var err error
 
-	// Retry de connexion à la DB avec backoff (max 2 minutes pour RDS)
-	maxRetries := 60
+	// Retry de connexion à la DB avec backoff (max 5 minutes pour RDS)
+	maxRetries := 150
 	for i := 0; i < maxRetries; i++ {
 		if dsn != "" {
 			db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
@@ -86,7 +86,7 @@ func main() {
 			}
 		}
 	} else {
-		log.Fatal("ERREUR FATALE: Impossible de se connecter à la base de données après 60 tentatives (2 minutes)")
+		log.Fatal("ERREUR FATALE: Impossible de se connecter à la base de données après 150 tentatives (5 minutes)")
 	}
 
 	// DB est connectée, initialiser les repositories
