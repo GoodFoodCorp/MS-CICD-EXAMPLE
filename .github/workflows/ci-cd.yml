@@ -505,6 +505,11 @@ jobs:
           # Retirer le 'v' au début si présent
           VERSION_NO_V="${VERSION#v}"
           IMAGE="${{ env.IMAGE_NAME }}:${VERSION_NO_V}"
+          K3S_IP="${{ steps.k3s-ip.outputs.K3S_IP }}"
+
+          # Remplacer le placeholder PUBLIC_IP par l'IP publique réelle
+          echo "[INFO] Configuring PUBLIC_IP in deployment: ${K3S_IP}"
+          sed -i "s/PUBLIC_IP_PLACEHOLDER/${K3S_IP}/g" k8s/deployment.yaml
 
           # Créer le namespace si nécessaire
           kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -

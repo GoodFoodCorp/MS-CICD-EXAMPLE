@@ -84,7 +84,22 @@ func main() {
 
 	// Swagger / Scalar documentation
 	r.GET("/api-docs/swagger.json", func(c *gin.Context) {
-		c.File("/docs/swagger.json")
+		// Lire le fichier swagger.json
+		data, err := os.ReadFile("docs/swagger.json")
+		if err != nil {
+			c.JSON(500, gin.H{"error": "Failed to load swagger.json"})
+			return
+		}
+		
+		// Remplacer localhost:8081 par l'IP publique si définie
+		swaggerStr := string(data)
+		publicIP := os.Getenv("PUBLIC_IP")
+		if publicIP != "" {
+			swaggerStr = strings.ReplaceAll(swaggerStr, "localhost:8081", publicIP+":30081")
+		}
+		
+		c.Header("Content-Type", "application/json")
+		c.String(200, swaggerStr)
 	})
 	r.GET("/scalar", func(c *gin.Context) {
 		c.Header("Content-Type", "text/html")
