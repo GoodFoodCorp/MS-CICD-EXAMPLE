@@ -515,6 +515,27 @@ jobs:
             fi
           done
 
+      - name: Node Cleanup & Disk Check
+        env:
+          K3S_IP: ${{ steps.k3s-ip.outputs.K3S_IP }}
+        run: |
+          echo "[INFO] === Node health check & cleanup ==="
+          ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 -o StrictHostKeyChecking=no ec2-user@${K3S_IP} bash <<'ENDSSH'
+            echo "--- Disk usage avant nettoyage ---"
+            df -h /
+            echo "--- Images containerd K3s (avant prune) ---"
+            sudo k3s crictl images 2>/dev/null | wc -l || true
+            echo "--- Nettoyage des images inutilisées (crictl prune) ---"
+            sudo k3s crictl rmi --prune 2>/dev/null && echo "[OK] Images prunées" || echo "[WARN] crictl prune failed (non bloquant)"
+            echo "--- Disk usage après nettoyage ---"
+            df -h /
+            echo "--- Pods courants ---"
+            sudo k3s kubectl get pods -n production -o wide 2>/dev/null || true
+            echo "--- Revision history du deployment ---"
+            sudo k3s kubectl rollout history deployment/auth-service -n production 2>/dev/null || true
+          ENDSSH
+          echo "[OK] Node cleanup terminé"
+
       - name: Deploy to Kubernetes
         run: |
           VERSION="${{ needs.versioning.outputs.version }}"
@@ -568,42 +589,77 @@ jobs:
             exit 1
           fi
 
-          # Appliquer tous les manifests Kubernetes avec server-side apply pour éviter les conflits
-          echo "[INFO] Applying Kubernetes manifests..."
+          # ── CORRECTION: injecter l'image versionnée directement dans le manifest ──
+          # Evite le double-rollout (kubectl apply avec :latest puis kubectl set image)
+          echo "[INFO] Injecting image ${IMAGE} into deployment manifest..."
+          sed -i "s|cocostee/auth-service:latest|${IMAGE}|g" k8s/deployment.yaml
+          grep "image:" k8s/deployment.yaml
+
+          # Appliquer TOUS les manifests en UN SEUL rollout
+          echo "[INFO] Applying Kubernetes manifests (single rollout)..."
           kubectl apply -f k8s/ --server-side=true --force-conflicts -n production
 
-          # Mettre à jour l'image du deployment avec la nouvelle version
-          echo "[INFO] Updating image to ${IMAGE}..."
-          kubectl set image deployment/auth-service \
-            auth-service=${IMAGE} \
-            -n production \
-            --record=false
+          # ── MONITORING SSH en arrière-plan: snapshot pods + events toutes les 15s ──
+          echo "[INFO] Starting live pod monitoring via SSH (every 15s)..."
+          (
+            for i in $(seq 1 40); do
+              echo ""
+              echo "====== [Monitor #${i}/40 - $(date '+%H:%M:%S')] ======"
+              ssh -i ~/.ssh/id_rsa -o ConnectTimeout=5 -o StrictHostKeyChecking=no ec2-user@${K3S_IP} \
+                "sudo k3s kubectl get pods -n production -o wide 2>/dev/null; \
+                 echo '--- Events ---'; \
+                 sudo k3s kubectl get events -n production --sort-by=.lastTimestamp 2>/dev/null | tail -6" \
+                2>/dev/null || echo "[Monitor] SSH unreachable"
+              sleep 15
+            done
+          ) &
+          MONITOR_PID=$!
+          trap "kill \$MONITOR_PID 2>/dev/null || true" EXIT
 
-          # Attendre le rollout avec un timeout plus long
+          # Attendre le rollout
           echo "[INFO] Waiting for rollout to complete for version ${VERSION_NO_V}..."
           if ! kubectl rollout status deployment/auth-service -n production --timeout=10m; then
-            echo "[ERROR] Rollout failed - capturing diagnostics..."
-            echo "--- Pods ---"
+            echo "[ERROR] ====== ROLLOUT FAILED ======"
+            kill $MONITOR_PID 2>/dev/null || true
+
+            echo "--- Pods (kubectl remote) ---"
             kubectl get pods -n production -o wide
-            echo "--- Events ---"
+            echo "--- Events (kubectl remote) ---"
             kubectl get events -n production --sort-by='.lastTimestamp' | tail -30
             echo "--- Describe deployment ---"
             kubectl describe deployment auth-service -n production
-            echo "--- Logs (new pods) ---"
-            for pod in $(kubectl get pods -n production -l app=auth-service --no-headers -o custom-columns=':metadata.name'); do
-              echo "=== Pod: $pod ==="
-              kubectl logs "$pod" -n production --tail=50 2>/dev/null || echo "No logs"
-              kubectl logs "$pod" -n production --previous --tail=20 2>/dev/null || true
-            done
-            echo "[INFO] Rolling back to previous revision..."
+
+            echo "--- LOGS COMPLETS via SSH ---"
+            ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 -o StrictHostKeyChecking=no ec2-user@${K3S_IP} bash <<'ENDFAIL'
+              echo "=== Disk usage ==="
+              df -h /
+              echo "=== Toutes les images K3s ==="
+              sudo k3s crictl images 2>/dev/null
+              echo "=== Pods détail ==="
+              sudo k3s kubectl get pods -n production -o wide 2>/dev/null
+              for pod in $(sudo k3s kubectl get pods -n production -l app=auth-service --no-headers -o custom-columns=':metadata.name' 2>/dev/null); do
+                echo "--- Pod: ${pod} ---"
+                sudo k3s kubectl describe pod "${pod}" -n production 2>/dev/null | grep -A3 'State:\|Reason:\|Message:\|Image:\|Events:'
+                echo "--- Logs: ${pod} ---"
+                sudo k3s kubectl logs "${pod}" -n production --tail=100 2>/dev/null || echo "No logs"
+                sudo k3s kubectl logs "${pod}" -n production --previous --tail=50 2>/dev/null || true
+              done
+            ENDFAIL
+
+            echo "[ROLLBACK] Retour à la révision précédente..."
             kubectl rollout undo deployment/auth-service -n production
             kubectl rollout status deployment/auth-service -n production --timeout=3m || true
             exit 1
           fi
 
-          # Vérifier que les pods sont bien démarrés
-          echo "[INFO] Pods status:"
-          kubectl get pods -n production -l app=auth-service -o wide
+          kill $MONITOR_PID 2>/dev/null || true
+
+          # Confirmation finale via SSH: vérifier l'image réellement en cours
+          echo "[INFO] Confirming running image via SSH..."
+          ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 -o StrictHostKeyChecking=no ec2-user@${K3S_IP} \
+            "sudo k3s kubectl get pods -n production -o wide 2>/dev/null && \
+             sudo k3s kubectl get deployment auth-service -n production -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null && echo ''" \
+            2>/dev/null || true
 
           echo "[OK] Deployment successful!"
 
