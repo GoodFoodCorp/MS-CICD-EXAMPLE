@@ -590,10 +590,25 @@ jobs:
           echo "[OK] Deployment successful!"
 
       - name: Deployment summary
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
         run: |
           VERSION="${{ needs.versioning.outputs.version }}"
           VERSION_NO_V="${VERSION#v}"
           K3S_IP="${{ steps.k3s-ip.outputs.K3S_IP }}"
+
+          # Relire les credentials RDS pour le résumé Adminer
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET_NAME="auth-service-tfstate-prod-${AWS_ACCOUNT_ID}"
+          aws s3 cp "s3://${BUCKET_NAME}/terraform.tfstate" /tmp/tfstate_summary.json --quiet
+          ADMINER_HOST=$(jq -r '.outputs.rds_endpoint.value // empty' /tmp/tfstate_summary.json | cut -d: -f1)
+          ADMINER_USER=$(jq -r '.outputs.rds_username.value // empty' /tmp/tfstate_summary.json)
+          ADMINER_PASS=$(jq -r '.outputs.rds_password.value // empty' /tmp/tfstate_summary.json)
+          ADMINER_DB=$(jq -r '.outputs.rds_database_name.value // "authdb"' /tmp/tfstate_summary.json)
+          rm -f /tmp/tfstate_summary.json
 
           echo "## Deployment Successful" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -610,6 +625,24 @@ jobs:
           echo "- **[Swagger JSON](http://${K3S_IP}:30081/api-docs/swagger.json)** - OpenAPI specification" >> $GITHUB_STEP_SUMMARY
           echo "- **[Register](http://${K3S_IP}:30081/api/auth/register)** - Create account" >> $GITHUB_STEP_SUMMARY
           echo "- **[Login](http://${K3S_IP}:30081/api/auth/login)** - Sign in" >> $GITHUB_STEP_SUMMARY
+          echo "- **[Adminer](http://${K3S_IP}:30082)** - Database UI" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Adminer (Database UI)" >> $GITHUB_STEP_SUMMARY
+          echo "| Champ | Valeur |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| URL | http://${K3S_IP}:30082 |" >> $GITHUB_STEP_SUMMARY
+          echo "| System | PostgreSQL |" >> $GITHUB_STEP_SUMMARY
+          echo "| Server | ${ADMINER_HOST} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Username | ${ADMINER_USER} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Password | ${ADMINER_PASS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Database | ${ADMINER_DB} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Default Accounts (Seeder)" >> $GITHUB_STEP_SUMMARY
+          echo "| Email | Password | Role |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|----------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| admin@example.com | Admin123! | admin |" >> $GITHUB_STEP_SUMMARY
+          echo "| manager@example.com | Manager123! | manager |" >> $GITHUB_STEP_SUMMARY
+          echo "| user@example.com | User1234! | user |" >> $GITHUB_STEP_SUMMARY
 
   # ---------------------------------------------------------
   # Job 7: Terraform Destroy (Manuel uniquement)
