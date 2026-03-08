@@ -581,7 +581,25 @@ jobs:
 
           # Attendre le rollout avec un timeout plus long
           echo "[INFO] Waiting for rollout to complete for version ${VERSION_NO_V}..."
-          kubectl rollout status deployment/auth-service -n production --timeout=10m
+          if ! kubectl rollout status deployment/auth-service -n production --timeout=10m; then
+            echo "[ERROR] Rollout failed - capturing diagnostics..."
+            echo "--- Pods ---"
+            kubectl get pods -n production -o wide
+            echo "--- Events ---"
+            kubectl get events -n production --sort-by='.lastTimestamp' | tail -30
+            echo "--- Describe deployment ---"
+            kubectl describe deployment auth-service -n production
+            echo "--- Logs (new pods) ---"
+            for pod in $(kubectl get pods -n production -l app=auth-service --no-headers -o custom-columns=':metadata.name'); do
+              echo "=== Pod: $pod ==="
+              kubectl logs "$pod" -n production --tail=50 2>/dev/null || echo "No logs"
+              kubectl logs "$pod" -n production --previous --tail=20 2>/dev/null || true
+            done
+            echo "[INFO] Rolling back to previous revision..."
+            kubectl rollout undo deployment/auth-service -n production
+            kubectl rollout status deployment/auth-service -n production --timeout=3m || true
+            exit 1
+          fi
 
           # Vérifier que les pods sont bien démarrés
           echo "[INFO] Pods status:"
