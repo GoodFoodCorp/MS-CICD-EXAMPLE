@@ -515,25 +515,21 @@ jobs:
             fi
           done
 
-      - name: Node Cleanup & Disk Check
+      - name: Node Cleanup & Disable Auto-Updater
         env:
           K3S_IP: ${{ steps.k3s-ip.outputs.K3S_IP }}
         run: |
+          echo "[INFO] === Désactivation du service auto-updater (cause du rollback) ==="
+          # L'auto-updater 'auth-updater.timer' est installé par user-data.sh.
+          # Il tourne toutes les 5 minutes, requête Docker Hub avec sort -V et
+          # fait kubectl set image vers une vieille version -> ROLLBACK SYSTÉMATIQUE.
+          # On le désactive de manière permanente avant chaque déploiement CI.
+          ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 -o StrictHostKeyChecking=no ec2-user@${K3S_IP} \
+            "sudo systemctl disable --now auth-updater.timer auth-updater.service 2>/dev/null && echo '[OK] auth-updater.timer désactivé' || echo '[INFO] auth-updater non trouvé (OK)'"
+
           echo "[INFO] === Node health check & cleanup ==="
-          ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 -o StrictHostKeyChecking=no ec2-user@${K3S_IP} bash <<'ENDSSH'
-            echo "--- Disk usage avant nettoyage ---"
-            df -h /
-            echo "--- Images containerd K3s (avant prune) ---"
-            sudo k3s crictl images 2>/dev/null | wc -l || true
-            echo "--- Nettoyage des images inutilisées (crictl prune) ---"
-            sudo k3s crictl rmi --prune 2>/dev/null && echo "[OK] Images prunées" || echo "[WARN] crictl prune failed (non bloquant)"
-            echo "--- Disk usage après nettoyage ---"
-            df -h /
-            echo "--- Pods courants ---"
-            sudo k3s kubectl get pods -n production -o wide 2>/dev/null || true
-            echo "--- Revision history du deployment ---"
-            sudo k3s kubectl rollout history deployment/auth-service -n production 2>/dev/null || true
-          ENDSSH
+          ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 -o StrictHostKeyChecking=no ec2-user@${K3S_IP} \
+            "echo '--- Disk ---' && df -h / && echo '--- Images K3s ---' && sudo k3s crictl images 2>/dev/null | wc -l && echo '--- Prune ---' && sudo k3s crictl rmi --prune 2>/dev/null && echo '[OK] Images prunées' || true"
           echo "[OK] Node cleanup terminé"
 
       - name: Deploy to Kubernetes

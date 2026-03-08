@@ -276,102 +276,14 @@ echo "[WAIT] Attente du déploiement..."
 kubectl rollout status deployment/auth-service -n production --timeout=5m
 
 # ═══════════════════════════════════════════════════════════
-# 8.[INSTALL] du service de mise à jour automatique
+# 8. NOTE: Auto-updater supprimé
+# Le déploiement est géré exclusivement par le pipeline CI/CD.
+# Un timer systemd qui poll Docker Hub toutes les 5 minutes
+# et fait kubectl set image cause des rollbacks pendant les
+# déploiements CI (race condition image tag v0.0.X vs 0.0.X).
 # ═══════════════════════════════════════════════════════════
 
-echo "[INSTALL] du service de mise à jour automatique..."
-
-cat > /usr/local/bin/check-updates.sh <<'SCRIPT'
-#!/bin/bash
-
-NAMESPACE="production"
-DEPLOYMENT="auth-service"
-IMAGE="${docker_username}/auth-service"
-WEBHOOK_URL="${webhook_url}"
-
-# Récupérer la version actuelle
-CURRENT_TAG=$(kubectl get deployment $DEPLOYMENT -n $NAMESPACE -o jsonpath='{.spec.template.spec.containers[0].image}' | cut -d':' -f2)
-
-# Récupérer la dernière version depuis Docker Hub
-LATEST_TAG=$(curl -s "https://registry.hub.docker.com/v2/repositories/$IMAGE/tags/?page_size=100" | jq -r '.results[] | select(.name != "latest") | .name' | sort -V | tail -n1)
-
-if [ "$CURRENT_TAG" != "$LATEST_TAG" ] && [ ! -z "$LATEST_TAG" ]; then
-  echo "🆕 Nouvelle version détectée: $LATEST_TAG (actuelle: $CURRENT_TAG)"
-  
-  # Envoyer notification
-  curl -X POST "$WEBHOOK_URL" \
-    -H "Content-Type: application/json" \
-    -d "{
-      \"event\": \"update_detected\",
-      \"service\": \"auth-service\",
-      \"from_version\": \"$CURRENT_TAG\",
-      \"to_version\": \"$LATEST_TAG\",
-      \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-    }" 2>/dev/null
-  
-  # Mettre à jour le deployment
-  kubectl set image deployment/$DEPLOYMENT \
-    auth-service=$IMAGE:$LATEST_TAG \
-    -n $NAMESPACE
-  
-  # Attendre le rollout
-  kubectl rollout status deployment/$DEPLOYMENT -n $NAMESPACE
-  
-  #[NOTIFY] de succès
-  curl -X POST "$WEBHOOK_URL" \
-    -H "Content-Type: application/json" \
-    -d "{
-      \"event\": \"update_completed\",
-      \"service\": \"auth-service\",
-      \"version\": \"$LATEST_TAG\",
-      \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
-      \"status\": \"success\"
-    }" 2>/dev/null
-  
-  echo "[OK] Mise à jour terminée vers $LATEST_TAG"
-else
-  echo "✓ Déjà à jour (version: $CURRENT_TAG)"
-fi
-SCRIPT
-
-chmod +x /usr/local/bin/check-updates.sh
-
-# Créer un service systemd pour vérifier les mises à jour toutes les 5 minutes
-cat > /etc/systemd/system/auth-updater.service <<'SERVICE'
-[Unit]
-Description=Auth Service Auto-Updater
-After=network.target k3s.service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/check-updates.sh
-User=root
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-SERVICE
-
-cat > /etc/systemd/system/auth-updater.timer <<'TIMER'
-[Unit]
-Description=Check for Auth Service updates every 5 minutes
-Requires=auth-updater.service
-
-[Timer]
-OnBootSec=5min
-OnUnitActiveSec=5min
-Unit=auth-updater.service
-
-[Install]
-WantedBy=timers.target
-TIMER
-
-systemctl daemon-reload
-systemctl enable auth-updater.timer
-systemctl start auth-updater.timer
-
-echo "[OK] Service de mise à jour automatique installé"
+echo "[INFO] Déploiement initial terminé. Les mises à jour sont gérées par CI/CD."
 
 # ═══════════════════════════════════════════════════════════
 # 9.[CONFIG] du firewall
