@@ -534,40 +534,30 @@ jobs:
           # Créer le namespace si nécessaire
           kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
 
-          # Créer le secret DATABASE_URL depuis l'output Terraform
-          # IMPORTANT: provider.tf n'a pas de bloc backend statique.
-          # Les flags -backend-config= sont ignorés sans bloc backend.
-          # Il faut créer backend-override.tf AVANT terraform init (même logique que ci-deploy.sh).
-          echo "[INFO] Creating database-url secret from Terraform state..."
+          # Créer le secret DATABASE_URL en lisant le tfstate directement depuis S3.
+          # On évite terraform init (lent, nécessite providers) en parsant le JSON d'état avec jq.
+          echo "[INFO] Reading RDS credentials from Terraform state (S3)..."
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           BUCKET_NAME="auth-service-tfstate-prod-${AWS_ACCOUNT_ID}"
-          cat > terraform/backend-override.tf <<EOF
-          terraform {
-            backend "s3" {
-              bucket  = "${BUCKET_NAME}"
-              key     = "terraform.tfstate"
-              region  = "${{ secrets.AWS_REGION }}"
-              encrypt = true
-            }
-          }
-          EOF
-          cd terraform
-          terraform init -backend-only -reconfigure -input=false -no-color
-          DB_HOST=$(terraform output -raw rds_endpoint 2>/dev/null || echo "")
-          DB_USER=$(terraform output -raw rds_username 2>/dev/null || echo "")
-          DB_PASS=$(terraform output -raw rds_password 2>/dev/null || echo "")
-          DB_NAME=$(terraform output -raw rds_database_name 2>/dev/null || echo "authdb")
-          cd ..
+
+          aws s3 cp "s3://${BUCKET_NAME}/terraform.tfstate" /tmp/tfstate.json
+          DB_HOST=$(jq -r '.outputs.rds_endpoint.value // empty' /tmp/tfstate.json)
+          DB_USER=$(jq -r '.outputs.rds_username.value // empty' /tmp/tfstate.json)
+          DB_PASS=$(jq -r '.outputs.rds_password.value // empty' /tmp/tfstate.json)
+          DB_NAME=$(jq -r '.outputs.rds_database_name.value // "authdb"' /tmp/tfstate.json)
+          rm -f /tmp/tfstate.json
+
           if [ -n "${DB_HOST}" ] && [ -n "${DB_USER}" ] && [ -n "${DB_PASS}" ]; then
             DATABASE_URL="postgres://${DB_USER}:${DB_PASS}@${DB_HOST}/${DB_NAME}?sslmode=require"
             kubectl create secret generic database-url \
               --from-literal=url="${DATABASE_URL}" \
               --namespace=production \
               --dry-run=client -o yaml | kubectl apply -f -
-            echo "[OK] Secret database-url created/updated"
+            echo "[OK] Secret database-url created/updated (host: ${DB_HOST})"
           else
             echo "[ERROR] Failed to retrieve RDS credentials from Terraform state"
-            echo "  Bucket: ${BUCKET_NAME} / DB_HOST: '${DB_HOST}'"
+            echo "  Bucket: ${BUCKET_NAME}"
+            echo "  DB_HOST: '${DB_HOST}'"
             exit 1
           fi
 
