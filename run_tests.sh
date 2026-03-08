@@ -1,72 +1,37 @@
 #!/bin/bash
+# Script de test pour l'Auth Service
 
-# Script de test pour le Auth Service
-# Ce script exécute tous les tests et génère des rapports
+set -euo pipefail
 
-set -e
-
-echo "🧪 Auth Service - Test Suite"
-echo "=============================="
+echo "[TEST] Auth Service - Test Suite"
+echo "================================="
 echo ""
 
-# Couleurs
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
-
-# Test 1: Lancer tous les tests
-echo -e "${YELLOW}1️⃣  Exécution de tous les tests...${NC}"
+# Executer tous les tests
+echo "[1/3] Execution de tous les tests..."
 if go test ./... -v; then
-    echo -e "${GREEN}[OK] Tous les tests sont passés!${NC}"
+    echo "[OK] Tous les tests sont passes"
 else
-    echo -e "${RED}[ERROR] Certains tests ont échoué${NC}"
+    echo "[ERROR] Certains tests ont echoue"
     exit 1
 fi
 
 echo ""
 
-# Test 2: Couverture de test
-echo -e "${YELLOW}2️⃣  Génération du rapport de couverture...${NC}"
-go test ./... -coverprofile=coverage.out
+# Rapport de couverture
+echo "[2/3] Rapport de couverture..."
+go test ./... -coverprofile=coverage.out -covermode=count
 go tool cover -func=coverage.out
 
 echo ""
 
-# Test 3: Tests par package
-echo -e "${YELLOW}3️⃣  Résumé par package:${NC}"
-echo "   - models:      100% [OK]"
-echo "   - services:    29.3% [WARNING]"
-echo "   - controllers: 13.5% [WARNING]"
-echo "   - middleware:  0% [ERROR]"
-echo "   - repository:  0% [ERROR]"
-
-echo ""
-
-# Test 4: HTML Report
-echo -e "${YELLOW}4️⃣  Génération du rapport HTML...${NC}"
+# Rapport HTML
+echo "[3/3] Rapport HTML..."
 go tool cover -html=coverage.out -o coverage.html
-echo -e "${GREEN}[OK] Rapport généré: coverage.html${NC}"
+echo "[OK] Rapport genere: coverage.html"
 
 echo ""
-
-# Test 5: Tests spécifiques
-echo -e "${YELLOW}5️⃣  Exécution des tests spécifiques:${NC}"
-
-echo "   • Tests de validation de mot de passe..."
-go test ./internal/services -run TestValidatePasswordComplex -v
-
-echo "   • Tests de modèles..."
-go test ./internal/models -v
-
-echo "   • Tests de contrôleurs..."
-go test ./internal/controllers -v
-
+echo "[OK] Suite de tests completee avec succes"
 echo ""
-echo -e "${GREEN}[OK] Suite de tests complétée avec succès!${NC}"
-echo ""
-echo "[INFO] Statistiques:"
-echo "   - Total de tests: 38"
-echo "   - Tests passés: 38 [OK]"
-echo "   - Tests échoués: 0 [ERROR]"
-echo ""
+echo "[INFO] Pour ouvrir le rapport HTML:"
+echo "   open coverage.html"

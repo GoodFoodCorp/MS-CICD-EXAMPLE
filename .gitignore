@@ -24,3 +24,11 @@ terraform.tfstate.backup
 *.tfvars
 !terraform.tfvars.example
 backend-override.tf
+
+# SSH keys & certificates
+*.pem
+*.key
+ssh_key*
+
+# Generated reports
+coverage.html

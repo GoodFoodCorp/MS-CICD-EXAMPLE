@@ -1,24 +1,22 @@
 #!/bin/bash
-# ═══════════════════════════════════════════════════════════
-# Vérification finale avant déploiement
-# ═══════════════════════════════════════════════════════════
+# Verification finale avant deploiement
 
-set -e
+set -euo pipefail
 
-echo "[CHECK] Vérification de l'environnement..."
+echo "[CHECK] Verification de l'environnement..."
 echo ""
 
 ERRORS=0
 
-# Vérifier AWS CLI
+# Verifier AWS CLI
 if ! command -v aws &>/dev/null; then
-    echo "[ERROR] AWS CLI non installé"
+    echo "[ERROR] AWS CLI non installe"
     ((ERRORS++))
 else
-    echo "[OK] AWS CLI installé"
+    echo "[OK] AWS CLI installe"
 fi
 
-# Vérifier les credentials
+# Verifier les credentials
 if aws sts get-caller-identity &>/dev/null; then
     ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
     echo "[OK] Credentials AWS valides (Compte: ${ACCOUNT})"
@@ -27,58 +25,54 @@ else
     ((ERRORS++))
 fi
 
-# Vérifier Terraform
+# Verifier Terraform
 if ! command -v terraform &>/dev/null; then
-    echo "[ERROR] Terraform non installé"
+    echo "[ERROR] Terraform non installe"
     ((ERRORS++))
 else
-    echo "[OK] Terraform installé"
+    echo "[OK] Terraform installe"
 fi
 
-# Vérifier les VPCs
+# Verifier les VPCs
 REGION="${AWS_REGION:-us-east-1}"
 VPC_COUNT=$(aws ec2 describe-vpcs --region "${REGION}" --query 'Vpcs | length(@)' --output text 2>/dev/null || echo "?")
 echo ""
 echo "[INFO] VPCs dans ${REGION}: ${VPC_COUNT}/5"
 
 if [ "$VPC_COUNT" != "?" ] && [ "$VPC_COUNT" -ge 5 ]; then
-    echo "[WARNING]  ATTENTION : Limite de VPCs atteinte!"
+    echo "[WARNING] ATTENTION : Limite de VPCs atteinte!"
     echo "   Supprimez au moins 1 VPC avant de continuer"
-    echo ""
-    echo "   Console AWS : https://console.aws.amazon.com/vpc/"
     ((ERRORS++))
 fi
 
-# Vérifier les fichiers
+# Verifier les fichiers
 echo ""
-echo "[FILES] Vérification des fichiers..."
-cd terraform 2>/dev/null || { echo "[ERROR] Dossier terraform introuvable"; exit 1; }
+echo "[FILES] Verification des fichiers..."
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${SCRIPT_DIR}/terraform" || { echo "[ERROR] Dossier terraform introuvable"; exit 1; }
 
 required_files=("ci-deploy.sh" "pre-deploy-cleanup.sh" "main.tf" "provider.tf")
 for file in "${required_files[@]}"; do
-    if [ -f "$file" ]; then
-        echo "   [OK] $file"
+    if [ -f "${file}" ]; then
+        echo "   [OK] terraform/${file}"
     else
-        echo "   [ERROR] $file manquant"
+        echo "   [ERROR] terraform/${file} manquant"
         ((ERRORS++))
     fi
 done
 
-# Résumé
+cd "${SCRIPT_DIR}"
+
 echo ""
-echo "═══════════════════════════════════════════════════════════"
+echo "================================================================"
+echo "[INFO] Resume: Erreurs=${ERRORS}"
+echo "================================================================"
+
 if [ $ERRORS -eq 0 ]; then
-    echo "[OK] Tout est prêt pour le déploiement!"
-    echo ""
-    echo "[DEPLOY] Prochaines étapes:"
-    echo "   1. cd terraform && ./pre-deploy-cleanup.sh"
-    echo "   2. ./ci-deploy.sh"
-    echo ""
-    echo "   Ou directement:"
-    echo "   git add . && git commit -m 'deploy' && git push"
+    echo "[OK] Environnement pret"
     exit 0
 else
-    echo "[ERROR] $ERRORS erreur(s) détectée(s)"
-    echo "   Corrigez les erreurs ci-dessus avant de continuer"
+    echo "[ERROR] Corrigez les erreurs avant de continuer"
     exit 1
 fi

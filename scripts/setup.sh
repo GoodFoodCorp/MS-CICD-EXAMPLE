@@ -1,154 +1,123 @@
 #!/bin/bash
-
-# ═══════════════════════════════════════════════════════════
 # Script de setup initial
-# Configure l'environnement pour le déploiement
-# ═══════════════════════════════════════════════════════════
+# Configure l'environnement pour le deploiement
 
-set -e
+set -euo pipefail
 
-# Couleurs
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}   🔧 Setup - Auth Service CI/CD${NC}"
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo "--------------------------------------------"
+echo "   Setup - Auth Service CI/CD"
+echo "--------------------------------------------"
 echo ""
 
-# ═══════════════════════════════════════════════════════════
-# 1. Vérifier les dépendances
-# ═══════════════════════════════════════════════════════════
-
-echo -e "${YELLOW}1️⃣  Vérification des dépendances...${NC}"
+# 1. Verifier les dependances
+echo "[1/6] Dependances..."
 echo ""
 
 MISSING_DEPS=()
 
-# Terraform
-if command -v terraform &> /dev/null; then
-  echo -e "  ${GREEN}[OK] Terraform: $(terraform version -json | jq -r '.terraform_version')${NC}"
+if command -v terraform &>/dev/null; then
+    echo "  [OK] Terraform: $(terraform version -json | python3 -c 'import sys,json; print(json.load(sys.stdin).get("terraform_version","?"))')"
 else
-  echo -e "  ${RED}[ERROR] Terraform non installé${NC}"
-  MISSING_DEPS+=("terraform")
+    echo "  [ERROR] Terraform non installe"
+    MISSING_DEPS+=("terraform")
 fi
 
-# AWS CLI
-if command -v aws &> /dev/null; then
-  echo -e "  ${GREEN}[OK] AWS CLI: $(aws --version | cut -d' ' -f1)${NC}"
+if command -v aws &>/dev/null; then
+    echo "  [OK] AWS CLI: $(aws --version 2>&1 | cut -d' ' -f1)"
 else
-  echo -e "  ${RED}[ERROR] AWS CLI non installé${NC}"
-  MISSING_DEPS+=("aws-cli")
+    echo "  [ERROR] AWS CLI non installe"
+    MISSING_DEPS+=("aws-cli")
 fi
 
-# Docker
-if command -v docker &> /dev/null; then
-  echo -e "  ${GREEN}[OK] Docker: $(docker --version | cut -d' ' -f3 | tr -d ',')${NC}"
+if command -v docker &>/dev/null; then
+    echo "  [OK] Docker: $(docker --version | cut -d' ' -f3 | tr -d ',')"
 else
-  echo -e "  ${RED}[ERROR] Docker non installé${NC}"
-  MISSING_DEPS+=("docker")
+    echo "  [ERROR] Docker non installe"
+    MISSING_DEPS+=("docker")
 fi
 
-# kubectl
-if command -v kubectl &> /dev/null; then
-  echo -e "  ${GREEN}[OK] kubectl: $(kubectl version --client --short 2>/dev/null | cut -d' ' -f3)${NC}"
+if command -v kubectl &>/dev/null; then
+    echo "  [OK] kubectl: $(kubectl version --client -o json 2>/dev/null | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("clientVersion",{}).get("gitVersion","?"))')"
 else
-  echo -e "  ${RED}[ERROR] kubectl non installé${NC}"
-  MISSING_DEPS+=("kubectl")
+    echo "  [ERROR] kubectl non installe"
+    MISSING_DEPS+=("kubectl")
 fi
 
-# jq
-if command -v jq &> /dev/null; then
-  echo -e "  ${GREEN}[OK] jq: $(jq --version)${NC}"
+if command -v jq &>/dev/null; then
+    echo "  [OK] jq: $(jq --version)"
 else
-  echo -e "  ${RED}[ERROR] jq non installé${NC}"
-  MISSING_DEPS+=("jq")
+    echo "  [ERROR] jq non installe"
+    MISSING_DEPS+=("jq")
 fi
 
 echo ""
 
 if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
-  echo -e "${RED}[ERROR] Dépendances manquantes: ${MISSING_DEPS[*]}${NC}"
-  echo -e "${YELLOW}Veuillez installer les dépendances manquantes avant de continuer.${NC}"
-  exit 1
+    echo "[ERROR] Dependances manquantes: ${MISSING_DEPS[*]}"
+    exit 1
 fi
 
-# ═══════════════════════════════════════════════════════════
 # 2. Configuration AWS
-# ═══════════════════════════════════════════════════════════
-
-echo -e "${YELLOW}2️⃣  Configuration AWS...${NC}"
+echo "[2/6] Configuration AWS..."
 echo ""
 
-if aws sts get-caller-identity &> /dev/null; then
-  ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-  REGION=$(aws configure get region || echo "eu-west-3")
-  echo -e "  ${GREEN}[OK] AWS configuré${NC}"
-  echo -e "     Account ID: $ACCOUNT_ID"
-  echo -e "     Région:     $REGION"
+if aws sts get-caller-identity &>/dev/null; then
+    ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+    REGION=$(aws configure get region 2>/dev/null || echo "us-east-1")
+    echo "  [OK] AWS configure"
+    echo "     Account ID: $ACCOUNT_ID"
+    echo "     Region:     $REGION"
 else
-  echo -e "  ${RED}[ERROR] AWS non configuré${NC}"
-  echo ""
-  echo -e "${YELLOW}Configurez AWS avec:${NC}"
-  echo -e "  ${CYAN}aws configure${NC}"
-  exit 1
+    echo "  [ERROR] AWS non configure"
+    echo ""
+    echo "Configurez AWS avec: aws configure"
+    exit 1
 fi
 
 echo ""
 
-# ═══════════════════════════════════════════════════════════
-# 3. Clé SSH
-# ═══════════════════════════════════════════════════════════
-
-echo -e "${YELLOW}3️⃣  Vérification de la clé SSH...${NC}"
+# 3. Cle SSH
+echo "[3/6] Cle SSH..."
 echo ""
 
 if [ -f ~/.ssh/id_rsa.pub ]; then
-  echo -e "  ${GREEN}[OK] Clé SSH trouvée: ~/.ssh/id_rsa.pub${NC}"
+    echo "  [OK] Cle SSH trouvee: ~/.ssh/id_rsa.pub"
 else
-  echo -e "  ${YELLOW}[WARNING]  Clé SSH non trouvée${NC}"
-  echo ""
-  echo -e "${YELLOW}Voulez-vous générer une nouvelle clé SSH ? (y/N)${NC}"
-  read -r response
-  if [[ "$response" =~ ^([yY][eE][sS]|[yY])$ ]]; then
-    ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
-    echo -e "  ${GREEN}[OK] Clé SSH générée${NC}"
-  else
-    echo -e "  ${RED}[ERROR] Clé SSH requise pour le déploiement${NC}"
-    exit 1
-  fi
+    echo "  [WARNING] Cle SSH non trouvee"
+    echo ""
+    echo "Voulez-vous generer une nouvelle cle SSH ? (y/N)"
+    read -r response
+    if [[ "$response" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+        ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
+        echo "  [OK] Cle SSH generee"
+    else
+        echo "  [ERROR] Cle SSH requise pour le deploiement"
+        exit 1
+    fi
 fi
 
 echo ""
 
-# ═══════════════════════════════════════════════════════════
 # 4. Configuration Terraform
-# ═══════════════════════════════════════════════════════════
-
-echo -e "${YELLOW}4️⃣  Configuration Terraform...${NC}"
+echo "[4/6] Configuration Terraform..."
 echo ""
 
-cd terraform
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${SCRIPT_DIR}/../terraform"
 
 if [ ! -f terraform.tfvars ]; then
-  echo -e "  ${YELLOW}[WARNING]  terraform.tfvars non trouvé${NC}"
-  echo ""
-  echo -e "${YELLOW}Création de terraform.tfvars...${NC}"
-  
-  # Demander les informations
-  read -p "Docker Hub username: " DOCKER_USERNAME
-  read -p "Database password: " -s DB_PASSWORD
-  echo ""
-  read -p "Webhook URL (ou Entrée pour valeur par défaut): " WEBHOOK_URL
-  WEBHOOK_URL=${WEBHOOK_URL:-"https://webhook.site/unique-id"}
-  
-  # Créer le fichier
-  cat > terraform.tfvars <<EOF
-# Configuration générée automatiquement
-aws_region         = "$REGION"
+    echo "  [WARNING] terraform.tfvars non trouve"
+    echo ""
+    echo "Creation de terraform.tfvars..."
+
+    read -rp "Docker Hub username: " DOCKER_USERNAME
+    read -rsp "Database password: " DB_PASSWORD
+    echo ""
+    read -rp "Webhook URL (ou Entree pour laisser vide): " USER_WEBHOOK
+    WEBHOOK_URL="${USER_WEBHOOK:-}"
+
+    cat > terraform.tfvars << EOF
+aws_region         = "${REGION}"
 environment        = "prod"
 project_name       = "auth-service"
 
@@ -164,69 +133,52 @@ db_allocated_storage = 20
 db_instance_class    = "db.t3.micro"
 db_name              = "authdb"
 db_username          = "authuser"
-db_password          = "$DB_PASSWORD"
+db_password          = "${DB_PASSWORD}"
 
-docker_username = "$DOCKER_USERNAME"
+docker_username = "${DOCKER_USERNAME}"
 app_port        = 8081
-webhook_url     = "$WEBHOOK_URL"
+webhook_url     = "${WEBHOOK_URL}"
 EOF
-  
-  echo -e "  ${GREEN}[OK] terraform.tfvars créé${NC}"
+
+    echo "  [OK] terraform.tfvars cree"
 else
-  echo -e "  ${GREEN}[OK] terraform.tfvars existe${NC}"
+    echo "  [OK] terraform.tfvars existe"
 fi
 
-cd ..
+cd "${SCRIPT_DIR}/.."
 echo ""
 
-# ═══════════════════════════════════════════════════════════
-# 5. GitHub Secrets recommandés
-# ═══════════════════════════════════════════════════════════
-
-echo -e "${YELLOW}5️⃣  GitHub Secrets à configurer:${NC}"
+# 5. Secrets GitHub requis
+echo "[5/6] Secrets GitHub a configurer (Settings > Secrets > Actions):"
 echo ""
-echo -e "  ${CYAN}AWS_ACCESS_KEY_ID${NC}         - Clé d'accès AWS"
-echo -e "  ${CYAN}AWS_SECRET_ACCESS_KEY${NC}     - Secret AWS"
-echo -e "  ${CYAN}AWS_REGION${NC}                - Région: $REGION"
-echo -e "  ${CYAN}DOCKER_USERNAME${NC}           - Username Docker Hub"
-echo -e "  ${CYAN}DOCKER_PASSWORD${NC}           - Token Docker Hub"
-echo -e "  ${CYAN}KUBE_CONFIG${NC}               - Config kubectl (base64)"
-echo -e "  ${CYAN}WEBHOOK_URL${NC}               - URL du webhook"
+echo "  AWS_ACCESS_KEY_ID         - Cle d'acces AWS"
+echo "  AWS_SECRET_ACCESS_KEY     - Secret AWS"
+echo "  AWS_REGION                - Region: ${REGION}"
+echo "  DOCKER_USERNAME           - Username Docker Hub"
+echo "  DOCKER_PASSWORD           - Token Docker Hub"
+echo "  KUBE_CONFIG               - Config kubectl (base64)"
+echo "  WEBHOOK_URL               - URL du webhook (optionnel)"
 echo ""
 
-# ═══════════════════════════════════════════════════════════
-# 6. Rendre les scripts exécutables
-# ═══════════════════════════════════════════════════════════
-
-echo -e "${YELLOW}6️⃣  Configuration des permissions...${NC}"
+# 6. Permissions
+echo "[6/6] Permissions des scripts..."
 echo ""
 
-chmod +x scripts/*.sh
-echo -e "  ${GREEN}[OK] Scripts rendus exécutables${NC}"
+chmod +x "${SCRIPT_DIR}"/*.sh
+echo "  [OK] Scripts rendus executables"
 echo ""
 
-# ═══════════════════════════════════════════════════════════
-# Résumé
-# ═══════════════════════════════════════════════════════════
-
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}[OK] Setup terminé!${NC}"
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo "--------------------------------------------"
+echo "[OK] Setup termine!"
+echo "--------------------------------------------"
 echo ""
-echo -e "${YELLOW}📝 Prochaines étapes:${NC}"
+echo "Prochaines etapes:"
 echo ""
-echo -e "  1️⃣  Déployer l'infrastructure:"
-echo -e "     ${CYAN}cd terraform${NC}"
-echo -e "     ${CYAN}terraform init${NC}"
-echo -e "     ${CYAN}terraform plan${NC}"
-echo -e "     ${CYAN}terraform apply${NC}"
+echo "  1. Deployer l'infrastructure:"
+echo "     cd terraform"
+echo "     terraform init"
+echo "     terraform plan"
+echo "     terraform apply"
 echo ""
-echo -e "  2️⃣  Configurer GitHub Secrets (voir liste ci-dessus)"
-echo ""
-echo -e "  3️⃣  Pusher le code sur GitHub:"
-echo -e "     ${CYAN}git add .${NC}"
-echo -e "     ${CYAN}git commit -m 'feat: CI/CD setup'${NC}"
-echo -e "     ${CYAN}git push origin main${NC}"
-echo ""
-echo -e "  4️⃣  Le pipeline CI/CD se déclenchera automatiquement!"
-echo ""
+echo "  2. Lancer la CI/CD:"
+echo "     git push origin main"
