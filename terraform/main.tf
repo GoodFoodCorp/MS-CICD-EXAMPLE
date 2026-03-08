@@ -128,6 +128,15 @@ resource "aws_security_group" "k3s" {
     description = "NodePort Service"
   }
 
+  # NodePort pour Adminer
+  ingress {
+    from_port   = 30082
+    to_port     = 30082
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "NodePort Adminer"
+  }
+
   # API Kubernetes
   ingress {
     from_port   = 6443
