@@ -630,21 +630,11 @@ jobs:
             kubectl describe deployment auth-service -n production
 
             echo "--- LOGS COMPLETS via SSH ---"
-            ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 -o StrictHostKeyChecking=no ec2-user@${K3S_IP} bash <<'ENDFAIL'
-              echo "=== Disk usage ==="
-              df -h /
-              echo "=== Toutes les images K3s ==="
-              sudo k3s crictl images 2>/dev/null
-              echo "=== Pods détail ==="
-              sudo k3s kubectl get pods -n production -o wide 2>/dev/null
-              for pod in $(sudo k3s kubectl get pods -n production -l app=auth-service --no-headers -o custom-columns=':metadata.name' 2>/dev/null); do
-                echo "--- Pod: ${pod} ---"
-                sudo k3s kubectl describe pod "${pod}" -n production 2>/dev/null | grep -A3 'State:\|Reason:\|Message:\|Image:\|Events:'
-                echo "--- Logs: ${pod} ---"
-                sudo k3s kubectl logs "${pod}" -n production --tail=100 2>/dev/null || echo "No logs"
-                sudo k3s kubectl logs "${pod}" -n production --previous --tail=50 2>/dev/null || true
-              done
-            ENDFAIL
+            SSH_DIAG="ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 -o StrictHostKeyChecking=no ec2-user@${K3S_IP}"
+            echo "=== Disk usage ===" && $SSH_DIAG "df -h /" || true
+            echo "=== Images K3s ===" && $SSH_DIAG "sudo k3s crictl images 2>/dev/null | head -30" || true
+            echo "=== Pods ===" && $SSH_DIAG "sudo k3s kubectl get pods -n production -o wide 2>/dev/null" || true
+            $SSH_DIAG 'for pod in $(sudo k3s kubectl get pods -n production -l app=auth-service --no-headers -o custom-columns=":metadata.name" 2>/dev/null); do echo "--- Pod: $pod ---"; sudo k3s kubectl describe pod "$pod" -n production 2>/dev/null | grep -A5 "State:\|Reason:\|Message:\|Image:"; echo "--- Logs: $pod ---"; sudo k3s kubectl logs "$pod" -n production --tail=100 2>/dev/null || echo "No logs"; sudo k3s kubectl logs "$pod" -n production --previous --tail=50 2>/dev/null || true; done' || true
 
             echo "[ROLLBACK] Retour à la révision précédente..."
             kubectl rollout undo deployment/auth-service -n production
