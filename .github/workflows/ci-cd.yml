@@ -548,12 +548,19 @@ jobs:
           rm -f /tmp/tfstate.json
 
           if [ -n "${DB_HOST}" ] && [ -n "${DB_USER}" ] && [ -n "${DB_PASS}" ]; then
-            DATABASE_URL="postgres://${DB_USER}:${DB_PASS}@${DB_HOST}/${DB_NAME}?sslmode=require"
+            # Le mot de passe peut contenir des caractères spéciaux URL (#, %, ?, [, ]).
+            # On utilise le format clé=valeur libpq (pas d'URL) pour éviter tout besoin
+            # d'encodage percent. Le mot de passe est entouré de guillemets simples ;
+            # les characters ' et \ n'étant pas dans override_special il n'y a pas d'échappement à faire.
+            DB_HOST_ONLY=$(printf '%s' "${DB_HOST}" | cut -d: -f1)
+            DB_PORT_ONLY=$(printf '%s' "${DB_HOST}" | cut -d: -f2)
+            DB_PORT_ONLY="${DB_PORT_ONLY:-5432}"
+            DATABASE_URL="host=${DB_HOST_ONLY} port=${DB_PORT_ONLY} user=${DB_USER} password='${DB_PASS}' dbname=${DB_NAME} sslmode=require"
             kubectl create secret generic database-url \
               --from-literal=url="${DATABASE_URL}" \
               --namespace=production \
               --dry-run=client -o yaml | kubectl apply -f -
-            echo "[OK] Secret database-url created/updated (host: ${DB_HOST})"
+            echo "[OK] Secret database-url created/updated (host: ${DB_HOST_ONLY}:${DB_PORT_ONLY})"
           else
             echo "[ERROR] Failed to retrieve RDS credentials from Terraform state"
             echo "  Bucket: ${BUCKET_NAME}"
