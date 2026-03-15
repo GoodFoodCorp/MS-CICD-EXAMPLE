@@ -705,7 +705,7 @@ jobs:
           echo "| user@example.com | User1234! | user |" >> $GITHUB_STEP_SUMMARY
 
   # ---------------------------------------------------------
-  # Job 7: Terraform Destroy (Manuel uniquement)
+  # Job 7: Terraform Destroy
   # ---------------------------------------------------------
   terraform-destroy:
     name: Terraform Destroy (AWS)
