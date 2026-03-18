@@ -2,7 +2,6 @@
 # Data Sources
 # ═══════════════════════════════════════════════════════════
 
-# Récupérer les zones de disponibilité disponibles dans la région
 data "aws_availability_zones" "available" {
   state = "available"
 }
@@ -33,7 +32,7 @@ resource "aws_subnet" "public" {
   }
 }
 
-# Subnets Privés (pour RDS Multi-AZ)
+# Subnets Privés (pour RDS)
 resource "aws_subnet" "private" {
   count             = 2
   vpc_id            = aws_vpc.main.id
@@ -45,7 +44,7 @@ resource "aws_subnet" "private" {
   }
 }
 
-# Internet Gateway (pour accès Internet depuis le subnet public)
+# Internet Gateway
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
@@ -93,7 +92,7 @@ resource "aws_security_group" "k3s" {
     description = "SSH"
   }
 
-  # HTTP/HTTPS depuis Internet
+  # HTTP
   ingress {
     from_port   = 80
     to_port     = 80
@@ -216,7 +215,6 @@ resource "aws_key_pair" "deployer" {
 resource "random_password" "db_password" {
   length  = 32
   special = true
-  # Éviter certains caractères spéciaux qui peuvent poser problème dans les URLs
   override_special = "!#$%&*()-_=+[]{}:?"
 }
 
@@ -276,7 +274,7 @@ data "aws_ami" "amazon_linux" {
 }
 
 # ═══════════════════════════════════════════════════════════
-# Serveur EC2 avec K3s (Kubernetes)
+# Serveur EC2 avec K3s
 # ═══════════════════════════════════════════════════════════
 
 resource "aws_instance" "k3s_server" {

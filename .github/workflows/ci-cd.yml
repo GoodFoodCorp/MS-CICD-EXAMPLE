@@ -38,7 +38,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Nécessaire pour le versioning
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -234,7 +234,7 @@ jobs:
           no-cache: true
 
   # ---------------------------------------------------------
-  # Job 5: Terraform Infrastructure (Intelligent)
+  # Job 5: Terraform Infrastructure
   # ---------------------------------------------------------
   terraform:
     name: Terraform Apply
@@ -271,7 +271,7 @@ jobs:
           AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
           chmod +x pre-deploy-cleanup.sh
-          ./pre-deploy-cleanup.sh || echo "[WARNING] Cleanup failed, continuing anyway..."
+          ./pre-deploy-cleanup.sh || echo "[WARNING] Cleanup non réussi, continuer quand même..."
 
       - name: Smart Terraform Deployment
         id: deploy
@@ -284,7 +284,7 @@ jobs:
           chmod +x ci-deploy.sh
           ./ci-deploy.sh
 
-      - name: Get K3s IP (fallback)
+      - name: Get K3s IP
         id: get-ip
         if: steps.deploy.outputs.K3S_IP == ''
         working-directory: ./terraform
@@ -328,9 +328,9 @@ jobs:
           echo "## Terraform Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "${{ steps.deploy.outputs.TERRAFORM_CHANGES }}" = "true" ]; then
-            echo "- Infrastructure updated" >> $GITHUB_STEP_SUMMARY
+            echo "- Infrastructure mise à jour" >> $GITHUB_STEP_SUMMARY
           else
-            echo "- Infrastructure already up to date - No changes" >> $GITHUB_STEP_SUMMARY
+            echo "- Infrastructure n'a pas été modifiée" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**K3s IP:** ${{ steps.deploy.outputs.K3S_IP || steps.get-ip.outputs.K3S_IP }}" >> $GITHUB_STEP_SUMMARY
@@ -372,7 +372,7 @@ jobs:
       - name: Set K3s IP
         id: k3s-ip
         run: |
-          # Récupérer l'IP depuis les outputs (avec fallback si besoin)
+          # Récupérer l'IP depuis les outputs
           K3S_IP="${{ needs.terraform.outputs.k3s_ip }}"
           echo "K3S_IP=${K3S_IP}" >> $GITHUB_OUTPUT
           echo "[INFO] Using K3s IP: ${K3S_IP}"
@@ -412,7 +412,7 @@ jobs:
             fi
           done
 
-          # Attendre que le script user-data.sh soit terminé (flag .k3s-ready)
+          # Attendre que le script user-data.sh soit terminé
           echo "[INFO] Waiting for initialization script to complete..."
           MAX_INIT_RETRIES=10
           INIT_RETRY=0
@@ -434,7 +434,7 @@ jobs:
             fi
           done
 
-          # Télécharger le kubeconfig directement (pas besoin de vérifier l'existence d'abord)
+          # Télécharger le kubeconfig
           echo "[INFO] Downloading kubeconfig..."
           MAX_SCP_RETRIES=3
           SCP_RETRY=0
@@ -490,11 +490,10 @@ jobs:
       - name: Verify Docker image exists
         run: |
           VERSION="${{ needs.versioning.outputs.version }}"
-          # Retirer le 'v' au début si présent
           VERSION_NO_V="${VERSION#v}"
           IMAGE="${{ env.IMAGE_NAME }}:${VERSION_NO_V}"
 
-          echo "[INFO] Checking image existence: ${IMAGE}..."
+          echo "[INFO] Check si l'image existe: ${IMAGE}..."
 
           # Attendre que l'image soit disponible sur Docker Hub
           MAX_RETRIES=10
@@ -519,41 +518,34 @@ jobs:
         env:
           K3S_IP: ${{ steps.k3s-ip.outputs.K3S_IP }}
         run: |
-          echo "[INFO] === Désactivation du service auto-updater (cause du rollback) ==="
-          # L'auto-updater 'auth-updater.timer' est installé par user-data.sh.
-          # Il tourne toutes les 5 minutes, requête Docker Hub avec sort -V et
-          # fait kubectl set image vers une vieille version -> ROLLBACK SYSTÉMATIQUE.
-          # On le désactive de manière permanente avant chaque déploiement CI.
+          echo "Désactivation du service auto-updater ==="
+
           ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 -o StrictHostKeyChecking=no ec2-user@${K3S_IP} \
             "sudo systemctl disable --now auth-updater.timer auth-updater.service 2>/dev/null && echo '[OK] auth-updater.timer désactivé' || echo '[INFO] auth-updater non trouvé (OK)'"
 
-          echo "[INFO] === Node health check & cleanup ==="
+          echo "[INFO] === Vérification de la santé du nœud et nettoyage ==="
           ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 -o StrictHostKeyChecking=no ec2-user@${K3S_IP} \
             "echo '--- Disk ---' && df -h / && echo '--- Images K3s ---' && sudo k3s crictl images 2>/dev/null | wc -l && echo '--- Prune ---' && sudo k3s crictl rmi --prune 2>/dev/null && echo '[OK] Images prunées' || true"
-          echo "[OK] Node cleanup terminé"
+          echo "[OK] Nettoyage du nœud terminé"
 
       - name: Deploy to Kubernetes
         run: |
           VERSION="${{ needs.versioning.outputs.version }}"
-          # Retirer le 'v' au début si présent
           VERSION_NO_V="${VERSION#v}"
           IMAGE="${{ env.IMAGE_NAME }}:${VERSION_NO_V}"
           K3S_IP="${{ steps.k3s-ip.outputs.K3S_IP }}"
 
-          # Remplacer le placeholder PUBLIC_IP par l'IP publique réelle
-          echo "[INFO] Configuring PUBLIC_IP in deployment: ${K3S_IP}"
+          echo "[INFO] IP du nœud K3s: ${K3S_IP}"
           sed -i "s/PUBLIC_IP_PLACEHOLDER/${K3S_IP}/g" k8s/deployment.yaml
 
-          # Remplacer le placeholder VERSION par la version Git réelle
-          echo "[INFO] Configuring APP_VERSION in deployment: ${VERSION}"
+          echo "[INFO] Version: ${VERSION}"
           sed -i "s/VERSION_PLACEHOLDER/${VERSION}/g" k8s/deployment.yaml
 
           # Créer le namespace si nécessaire
           kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
 
           # Créer le secret DATABASE_URL en lisant le tfstate directement depuis S3.
-          # On évite terraform init (lent, nécessite providers) en parsant le JSON d'état avec jq.
-          echo "[INFO] Reading RDS credentials from Terraform state (S3)..."
+          echo "[INFO] Récupération des identifiants RDS depuis l'état Terraform (S3)..."
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           BUCKET_NAME="auth-service-tfstate-prod-${AWS_ACCOUNT_ID}"
 
@@ -565,10 +557,6 @@ jobs:
           rm -f /tmp/tfstate.json
 
           if [ -n "${DB_HOST}" ] && [ -n "${DB_USER}" ] && [ -n "${DB_PASS}" ]; then
-            # Le mot de passe peut contenir des caractères spéciaux URL (#, %, ?, [, ]).
-            # On utilise le format clé=valeur libpq (pas d'URL) pour éviter tout besoin
-            # d'encodage percent. Le mot de passe est entouré de guillemets simples ;
-            # les characters ' et \ n'étant pas dans override_special il n'y a pas d'échappement à faire.
             DB_HOST_ONLY=$(printf '%s' "${DB_HOST}" | cut -d: -f1)
             DB_PORT_ONLY=$(printf '%s' "${DB_HOST}" | cut -d: -f2)
             DB_PORT_ONLY="${DB_PORT_ONLY:-5432}"
@@ -577,22 +565,20 @@ jobs:
               --from-literal=url="${DATABASE_URL}" \
               --namespace=production \
               --dry-run=client -o yaml | kubectl apply -f -
-            echo "[OK] Secret database-url created/updated (host: ${DB_HOST_ONLY}:${DB_PORT_ONLY})"
+            echo "[OK] Secret database-url créé/mis à jour (host: ${DB_HOST_ONLY}:${DB_PORT_ONLY})"
           else
-            echo "[ERROR] Failed to retrieve RDS credentials from Terraform state"
+            echo "[ERROR] Impossible de récupérer les identifiants RDS depuis l'état Terraform"
             echo "  Bucket: ${BUCKET_NAME}"
             echo "  DB_HOST: '${DB_HOST}'"
             exit 1
           fi
 
-          # ── CORRECTION: injecter l'image versionnée directement dans le manifest ──
-          # Evite le double-rollout (kubectl apply avec :latest puis kubectl set image)
-          echo "[INFO] Injecting image ${IMAGE} into deployment manifest..."
+          echo "[INFO] Injection de l'image ${IMAGE} dans le manifest de déploiement..."
           sed -i "s|cocostee/auth-service:latest|${IMAGE}|g" k8s/deployment.yaml
           grep "image:" k8s/deployment.yaml
 
           # Appliquer TOUS les manifests en UN SEUL rollout
-          echo "[INFO] Applying Kubernetes manifests (single rollout)..."
+          echo "[INFO] Application des manifests Kubernetes..."
           kubectl apply -f k8s/ --server-side=true --force-conflicts -n production
 
           # ── MONITORING SSH en arrière-plan: snapshot pods + events toutes les 15s ──
@@ -613,7 +599,7 @@ jobs:
           trap "kill \$MONITOR_PID 2>/dev/null || true" EXIT
 
           # Attendre le rollout
-          echo "[INFO] Waiting for rollout to complete for version ${VERSION_NO_V}..."
+          echo "[INFO] Attente de la fin du rollout pour la version ${VERSION_NO_V}..."
           if ! kubectl rollout status deployment/auth-service -n production --timeout=10m; then
             echo "[ERROR] ====== ROLLOUT FAILED ======"
             kill $MONITOR_PID 2>/dev/null || true
@@ -640,8 +626,7 @@ jobs:
 
           kill $MONITOR_PID 2>/dev/null || true
 
-          # Confirmation finale via SSH: vérifier l'image réellement en cours
-          echo "[INFO] Confirming running image via SSH..."
+          echo "[INFO] Confirmation de l'image en cours via SSH..."
           ssh -i ~/.ssh/id_rsa -o ConnectTimeout=10 -o StrictHostKeyChecking=no ec2-user@${K3S_IP} \
             "sudo k3s kubectl get pods -n production -o wide 2>/dev/null && \
              sudo k3s kubectl get deployment auth-service -n production -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null && echo ''" \
@@ -660,7 +645,6 @@ jobs:
           VERSION_NO_V="${VERSION#v}"
           K3S_IP="${{ steps.k3s-ip.outputs.K3S_IP }}"
 
-          # Relire les credentials RDS pour le résumé Adminer
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           BUCKET_NAME="auth-service-tfstate-prod-${AWS_ACCOUNT_ID}"
           aws s3 cp "s3://${BUCKET_NAME}/terraform.tfstate" /tmp/tfstate_summary.json --quiet
@@ -670,7 +654,7 @@ jobs:
           ADMINER_DB=$(jq -r '.outputs.rds_database_name.value // "authdb"' /tmp/tfstate_summary.json)
           rm -f /tmp/tfstate_summary.json
 
-          echo "## Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "## Deployement réussi" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Build Information" >> $GITHUB_STEP_SUMMARY
           echo "- **Git Version**: ${{ needs.versioning.outputs.version }}" >> $GITHUB_STEP_SUMMARY
@@ -687,7 +671,7 @@ jobs:
           echo "- **[Login](http://${K3S_IP}:30081/api/auth/login)** - Sign in" >> $GITHUB_STEP_SUMMARY
           echo "- **[Adminer](http://${K3S_IP}:30082)** - Database UI" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Adminer (Database UI)" >> $GITHUB_STEP_SUMMARY
+          echo "### Adminer" >> $GITHUB_STEP_SUMMARY
           echo "| Champ | Valeur |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| URL | http://${K3S_IP}:30082 |" >> $GITHUB_STEP_SUMMARY
@@ -697,7 +681,7 @@ jobs:
           echo "| Password | ${ADMINER_PASS} |" >> $GITHUB_STEP_SUMMARY
           echo "| Database | ${ADMINER_DB} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Default Accounts (Seeder)" >> $GITHUB_STEP_SUMMARY
+          echo "### Comptes par défaut" >> $GITHUB_STEP_SUMMARY
           echo "| Email | Password | Role |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|----------|------|" >> $GITHUB_STEP_SUMMARY
           echo "| admin@example.com | Admin123! | admin |" >> $GITHUB_STEP_SUMMARY
@@ -771,12 +755,12 @@ jobs:
 
       - name: Destruction summary
         run: |
-          echo "## Infrastructure Destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "## Infrastructure détruite" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "All AWS resources have been deleted:" >> $GITHUB_STEP_SUMMARY
-          echo "- EC2 instances terminated" >> $GITHUB_STEP_SUMMARY
-          echo "- Security groups deleted" >> $GITHUB_STEP_SUMMARY
-          echo "- SSH keys deleted" >> $GITHUB_STEP_SUMMARY
-          echo "- All Terraform resources destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "Toutes les ressources AWS ont été supprimées:" >> $GITHUB_STEP_SUMMARY
+          echo "- Instances EC2 terminées" >> $GITHUB_STEP_SUMMARY
+          echo "- Groupes de sécurité supprimés" >> $GITHUB_STEP_SUMMARY
+          echo "- Clés SSH supprimées" >> $GITHUB_STEP_SUMMARY
+          echo "- Toutes les ressources Terraform détruites" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Note:** To redeploy, run the workflow with the 'deploy' action" >> $GITHUB_STEP_SUMMARY

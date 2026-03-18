@@ -18,11 +18,8 @@ echo "=================================="
 # ---------------------------------------------------------
 
 echo "[INSTALL] Installing system dependencies..."
-# Note: Amazon Linux 2023 a curl-minimal par défaut qui peut causer des conflits
-# On utilise --allowerasing pour résoudre les conflits automatiquement
 yum update -y --skip-broken
 yum install -y wget git jq --skip-broken
-# Installer curl en permettant l'effacement de curl-minimal si nécessaire
 yum install -y curl --allowerasing || echo "[WARNING] curl déjà installé ou curl-minimal présent"
 
 # ---------------------------------------------------------
@@ -30,7 +27,6 @@ yum install -y curl --allowerasing || echo "[WARNING] curl déjà installé ou c
 # ---------------------------------------------------------
 
 echo "[INSTALL] Installing K3s..."
-# Récupérer l'IP publique pour le certificat TLS
 PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
 echo "[INFO] IP publique: $PUBLIC_IP"
 
@@ -40,7 +36,6 @@ curl -sfL https://get.k3s.io | sh -s - \
   --tls-san "$PUBLIC_IP" \
   --node-name k3s-master
 
-# Attendre que K3s soit prêt
 echo "[WAIT] Attente du démarrage de K3s..."
 while ! kubectl get nodes &> /dev/null; do
   sleep 5
@@ -55,7 +50,6 @@ kubectl get nodes
 
 echo "[CONFIG][CONFIG] du kubeconfig pour ec2-user..."
 
-# Attendre que le fichier kubeconfig de K3s soit créé
 KUBECONFIG_SOURCE="/etc/rancher/k3s/k3s.yaml"
 echo "[WAIT] Attente de la création du kubeconfig K3s..."
 RETRIES=0
@@ -83,7 +77,6 @@ echo "[OK] Kubeconfig configuré pour ec2-user"
 ls -la /home/ec2-user/.kube/
 
 # ═══════════════════════════════════════════════════════════
-# IMPORTANT: Créer le flag .k3s-ready maintenant !
 # La CI peut maintenant récupérer le kubeconfig et continuer
 # Le reste se termine en arrière-plan
 # ═══════════════════════════════════════════════════════════
@@ -121,7 +114,7 @@ kubectl create secret generic webhook-config \
   --namespace=production \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# Secret pour DATABASE_URL (avec URL encoding du password pour gérer les caractères spéciaux)
+# Secret pour DATABASE_URL
 # Utilisation de Python pour l'URL encoding car il est disponible sur Amazon Linux 2023
 DB_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${db_password}', safe=''))")
 DATABASE_URL="postgresql://${db_username}:$${DB_PASSWORD_ENCODED}@${db_endpoint}/${db_name}?sslmode=require"
@@ -275,18 +268,10 @@ kubectl apply -f /tmp/auth-deployment.yaml
 echo "[WAIT] Attente du déploiement..."
 kubectl rollout status deployment/auth-service -n production --timeout=5m
 
-# ═══════════════════════════════════════════════════════════
-# 8. NOTE: Auto-updater supprimé
-# Le déploiement est géré exclusivement par le pipeline CI/CD.
-# Un timer systemd qui poll Docker Hub toutes les 5 minutes
-# et fait kubectl set image cause des rollbacks pendant les
-# déploiements CI (race condition image tag v0.0.X vs 0.0.X).
-# ═══════════════════════════════════════════════════════════
-
 echo "[INFO] Déploiement initial terminé. Les mises à jour sont gérées par CI/CD."
 
 # ═══════════════════════════════════════════════════════════
-# 9.[CONFIG] du firewall
+# 8.[CONFIG] du firewall
 # ═══════════════════════════════════════════════════════════
 
 echo "[CONFIG] du firewall..."
@@ -295,7 +280,7 @@ iptables -I INPUT -p tcp --dport ${app_port} -j ACCEPT
 iptables -I INPUT -p tcp --dport 30081 -j ACCEPT
 
 # ═══════════════════════════════════════════════════════════
-# 10.[NOTIFY] de fin d'installation
+# 9.[NOTIFY] de fin d'installation
 # ═══════════════════════════════════════════════════════════
 
 PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
@@ -316,5 +301,3 @@ echo "Date: $(date)"
 echo "IP publique: $PUBLIC_IP"
 echo "Port: ${app_port}"
 echo "=================================="
-
-# Note: Le flag .k3s-ready a déjà été créé plus tôt pour que la CI puisse continuer

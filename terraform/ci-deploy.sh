@@ -1,7 +1,6 @@
 #!/bin/bash
 # Script CI/CD - Gestion Terraform
-# Gere: creation du backend S3, import des ressources existantes,
-#       detection des changements, application selective.
+# Gere: creation du backend S3, import des ressources existantes, detection des changements, application selective.
 
 set -euo pipefail
 

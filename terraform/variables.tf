@@ -44,7 +44,7 @@ variable "private_subnets" {
 variable "instance_type" {
   description = "Type d'instance EC2"
   type        = string
-  default     = "t3.medium"  # K3s a besoin d'au moins 2GB RAM
+  default     = "t3.medium"
 }
 
 variable "key_name" {
@@ -81,8 +81,6 @@ variable "db_username" {
   default     = "authuser"
   sensitive   = true
 }
-
-# Note: Le mot de passe est généré automatiquement via random_password dans main.tf
 
 # ═══════════════════════════════════════════════════════════
 # Application Configuration
