@@ -121,6 +121,32 @@ Signature **HS256** avec `JWT_SECRET`, partagé avec tous les services.
 
 ---
 
+## Dépendances
+
+> **Légende** — 🔴 indispensable (le service ne démarre pas ou ne sert à rien) ·
+> 🟠 nécessaire à une fonctionnalité (le reste continue de marcher) ·
+> 🟡 optionnelle (dégradation silencieuse, journalisée)
+
+| Dépendance | Type | Conséquence si absente |
+|---|---|---|
+| **PostgreSQL** (`auth-db`) | 🔴 | Le service démarre en mode dégradé et renvoie `503` |
+| **franchise-service** | 🟡 | Au démarrage uniquement : sert à rattacher les managers à leur restaurant. Après 5 essais, le seeder abandonne avec un avertissement et les managers n'ont **pas** de `tenant_id` (leur portail sera vide). Un redémarrage de `auth-service` rattrape le coup. |
+| **user-service** | 🟡 | À l'inscription uniquement : la création du profil vierge est un appel **non bloquant**. Sans lui, le compte est créé normalement et le profil sera généré à la volée au premier accès. |
+
+**Aucune autre dépendance.** `auth-service` fonctionne seul avec sa base.
+
+### Qui dépend de ce service
+
+**Tous les services** valident les jetons qu'il émet, et le front en a besoin
+pour la connexion.
+
+> ℹ️ **La validation du JWT est locale** : chaque service vérifie la signature
+> avec le secret partagé, **sans appel réseau à `auth-service`**. Si
+> `auth-service` tombe, les jetons déjà émis continuent donc de fonctionner —
+> seules la connexion et l'inscription sont impossibles.
+
+---
+
 ## Lancement
 
 ```bash
