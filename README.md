@@ -1,228 +1,161 @@
-# Auth Service - CI/CD Complete
+# Auth Service
 
-> Microservice d'authentification en Go avec pipeline CI/CD automatisé sur AWS + Kubernetes
+Microservice **Go** d'**authentification** : identifiants, jetons et rôles. C'est
+lui qui émet les JWT que **tous** les autres services valident.
 
-[![CI/CD Pipeline](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-blue)](https://github.com/features/actions)
-[![Infrastructure](https://img.shields.io/badge/Infrastructure-Terraform-purple)](https://www.terraform.io/)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-K3s-blue)](https://k3s.io/)
-[![Cloud](https://img.shields.io/badge/Cloud-AWS-orange)](https://aws.amazon.com/)
-[![Go](https://img.shields.io/badge/Go-1.23-blue)](https://golang.org/)
+| | |
+|---|---|
+| **Langage / techno** | Go 1.26, Gin, GORM, PostgreSQL, JWT HS256, bcrypt |
+| **Base de données** | PostgreSQL (interne au compose, non exposée) |
+| **Port HTTP** | `8081` |
+| **Documentation API** | http://localhost:8081/scalar |
+| **Explorateur de base** | http://localhost:8090 (adminer, dev) |
 
-## Features
-
-- **Service d'authentification complet** (JWT, OAuth, 2FA)
-- **CI/CD automatisé** avec GitHub Actions
-- **Infrastructure as Code** avec Terraform
-- **Kubernetes** (K3s) avec auto-scaling (2-5 replicas)
-- **RDS PostgreSQL** sur AWS
-- **Déploiement continu** avec rolling updates
-- **Système de notifications** webhook
-- **Monitoring** et health checks
-- **Security scanning** automatique
-- **Versioning automatique** avec tags GitHub
-
-## Quick Start
-
-```bash
-# 1. Setup automatique
-make setup
-
-# 2. Déployer l'infrastructure
-cd terraform && terraform init && terraform apply
-
-# 3. Configurer GitHub Secrets (voir documentation)
-
-# 4. Push et le pipeline se lance !
-git push origin main
-```
-
-Voir [QUICKSTART.md](QUICKSTART.md) pour le guide complet.
-
-## Documentation
-
-- **[QUICKSTART.md](QUICKSTART.md)** - Démarrage rapide (5 min)
-- **[CICD-GUIDE.md](CICD-GUIDE.md)** - Guide complet CI/CD
-- **[Makefile](Makefile)** - Commandes disponibles
-
-## Architecture
-
-```
-GitHub Actions → Build & Test → Security Scan → Docker Build → Deploy K8s
-                                                                    ↓
-                     AWS: VPC + EC2 (K3s) + RDS PostgreSQL + Auto-Update
-```
-
-### Stack technique
-
-- **Backend** : Go 1.23 + Gin + GORM
-- **Database** : PostgreSQL (RDS)
-- **Containerization** : Docker + Kubernetes (K3s)
-- **CI/CD** : GitHub Actions
-- **Infrastructure** : Terraform + AWS
-- **Monitoring** : Kubernetes health checks + HPA
-
-## Pipeline CI/CD
-
-Le pipeline se déclenche automatiquement sur push `main` :
-
-1. **Build & Test** - Compilation Go + tests + coverage
-2. **Security Scan** - govulncheck + gosec + nancy
-3. **Versioning** - Tag automatique (SemVer)
-4. **Docker Build** - Multi-stage + push Docker Hub
-5. **Deploy** - Rolling update Kubernetes
-6. **Notification** - Webhook de confirmation
-
-**Temps total** : ~10-15 minutes
-
-## Auto-Update
-
-Un service systemd vérifie toutes les 5 minutes s'il y a une nouvelle version sur Docker Hub et met à jour automatiquement l'application avec zero downtime.
-
-## Commandes utiles
-
-```bash
-make help          # Afficher toutes les commandes
-make test          # Lancer les tests
-make monitor       # Dashboard de monitoring
-make deploy        # Déployer manuellement
-make rollback      # Rollback en cas de problème
-make ssh           # SSH vers le serveur
-```
-
-## API Endpoints
-
-```
-GET  /health              - Health check
-POST /api/auth/register   - Inscription
-POST /api/auth/login      - Connexion
-GET  /api/profile         - Profile utilisateur
-...
-```
-
-Documentation complète : `http://<server-ip>:8081/docs`
-
-## Sécurité
-
-- Security scanning automatique (gosec, govulncheck)
-- Secrets Kubernetes
-- RDS dans subnet privé
-- Security groups restrictifs
-- Image Docker distroless
-- User non-root
-
-## Coûts AWS
-
-Estimation : **~$53/mois**
-
-- EC2 t3.medium : ~$30
-- RDS db.t3.micro : ~$15
-- EIP + Data Transfer : ~$8
-
-## Développement local
-
-```bash
-# Installer les dépendances
-go mod download
-
-# Lancer en local
-make run
-
-# Avec Docker
-make docker-run
-
-# Tests
-make test
-```
-
-## Structure du projet
-
-```
-.
-├── .github/workflows/    # Pipeline CI/CD
-├── cmd/                  # Point d'entrée
-├── internal/             # Code métier
-│   ├── controllers/      # Contrôleurs API
-│   ├── services/         # Logique métier
-│   ├── models/           # Modèles de données
-│   └── middleware/       # Middlewares
-├── terraform/            # Infrastructure as Code
-├── k8s/                  # Manifestes Kubernetes
-├── scripts/              # Scripts de déploiement
-├── tests/                # Tests
-└── docs/                 # Documentation API
-```
-
-## 🔧 Configuration
-
-### Variables d'environnement
-
-```env
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=authdb
-DB_USER=authuser
-DB_PASSWORD=secret
-APP_PORT=8081
-JWT_SECRET=your-secret-key
-```
-
-### GitHub Secrets
-
-| Secret                  | Description                |
-| ----------------------- | -------------------------- |
-| `AWS_ACCESS_KEY_ID`     | AWS access key             |
-| `AWS_SECRET_ACCESS_KEY` | AWS secret key             |
-| `DOCKER_USERNAME`       | Docker Hub username        |
-| `DOCKER_PASSWORD`       | Docker Hub token           |
-| `KUBE_CONFIG`           | Kubernetes config (base64) |
-| `WEBHOOK_URL`           | URL webhook notifications  |
-
-## 🐛 Dépannage
-
-```bash
-# Vérifier l'état
-make monitor
-
-# Logs Kubernetes
-make k8s-logs
-
-# Logs Docker local
-make docker-logs
-
-# Rollback
-make rollback
-```
-
-Voir [CICD-GUIDE.md](CICD-GUIDE.md#-dépannage) pour plus de détails.
-
-## 🤝 Contribution
-
-1. Fork le projet
-2. Créer une branche (`git checkout -b feature/AmazingFeature`)
-3. Commit (`git commit -m 'feat: Add AmazingFeature'`)
-4. Push (`git push origin feature/AmazingFeature`)
-5. Pull Request
-
-## 📝 License
-
-Ce projet est sous licence MIT.
-
-## 👥 Auteurs
-
-**MAALSI Team**
-
-- Projet pédagogique BLOC 1
-- CI/CD avec Terraform + Kubernetes
-
-## 🙏 Remerciements
-
-- [K3s](https://k3s.io/) - Kubernetes léger
-- [Terraform](https://www.terraform.io/) - Infrastructure as Code
-- [GitHub Actions](https://github.com/features/actions) - CI/CD
-- [AWS](https://aws.amazon.com/) - Cloud provider
+> ℹ️ **Ce service ne gère plus les restaurants.** Ils appartenaient
+> historiquement à ce service sous le nom de « tenants » ; ils ont été déplacés
+> dans **`franchise-service`**. `auth-service` ne conserve que le `tenant_id` de
+> l'utilisateur, comme simple référence (sans jointure).
 
 ---
 
-**Made with ❤️ by MAALSI Team**
+## Architecture — en couches
 
-# Infrastructure re-déployée avec fix curl
+```
+cmd/main.go                # Démarrage, migrations GORM, routes, seeder
+internal/
+├── controllers/           # Handlers HTTP (auth, admin, rôles, profil)
+├── services/              # Logique métier + clients d'autres services
+│                          #   franchise_client.go → récupère les restaurants
+│                          #   user_client.go      → crée le profil à l'inscription
+│                          #   email_service.go    → emails de vérification/reset
+├── repository/            # Accès aux données via GORM
+├── models/                # User, Role, UserRole, RefreshToken,
+│                          # PasswordResetToken, EmailVerificationToken
+├── middleware/            # Validation JWT, contrôle de rôle, rate limiting
+└── seeder/                # Rôles et comptes de démonstration
+tests/                     # Tests unitaires et d'intégration (testify)
+```
+
+C'est un service **préexistant** au projet, conservé dans son style d'origine
+(couches classiques) plutôt que réécrit en hexagonal comme les services créés
+ensuite.
+
+---
+
+## Fonctionnalités
+
+### Authentification
+- **Inscription** d'un client (rôle `user` attribué automatiquement)
+- **Connexion** : renvoie un jeton d'accès (15 min) et un jeton de
+  rafraîchissement (7 jours), **à la fois en cookies HttpOnly et dans le corps de
+  la réponse** — le web utilise les cookies, le mobile le `Bearer`
+- **Rafraîchissement** du jeton d'accès
+- **Déconnexion** avec révocation du jeton de rafraîchissement
+- **Vérification d'email** par lien
+- **Mot de passe oublié** et **réinitialisation** par jeton
+- Contrôle de complexité du mot de passe (8+ caractères, lettres et chiffres)
+- Hachage bcrypt (coût 12)
+- **Rate limiting** sur les routes d'authentification
+
+### Rôles et administration
+- Création de rôles, attribution et retrait à un utilisateur
+- Consultation des rôles d'un utilisateur
+- Liste, recherche et consultation des utilisateurs (siège)
+- Promotion d'un utilisateur en administrateur
+
+### Intégrations sortantes
+- À l'inscription, demande à **`user-service`** de créer un profil vierge
+  (`POST /internal/profiles`, non bloquant)
+- Au démarrage, récupère les restaurants depuis **`franchise-service`** pour
+  rattacher les managers au bon restaurant
+
+### Comptes créés au démarrage (seeder)
+
+| Rôle | Email | Mot de passe |
+|---|---|---|
+| `admin` | `admin@example.com` | `Admin123!` |
+| `manager` (République) | `manager@example.com` | `Manager123!` |
+| `manager` (Montparnasse) | `manager2@example.com` | `Manager123!` |
+| `user` | `user@example.com` | `User1234!` |
+| `livreur` | `livreur@example.com` | `Livreur123!` |
+
+---
+
+## Endpoints
+
+| Méthode | Route | Accès |
+|---|---|---|
+| POST | `/api/auth/register` | public |
+| POST | `/api/auth/login` | public |
+| POST | `/api/auth/refresh` | public (jeton de rafraîchissement) |
+| POST | `/api/auth/logout` | public |
+| GET | `/api/auth/verify-email` | public (lien email) |
+| POST | `/api/auth/forgot-password` | public |
+| POST | `/api/auth/reset-password` | public (jeton) |
+| GET | `/api/user/me` | authentifié |
+| GET | `/api/admin/users`, `/users/:id`, `/search` | `admin` |
+| POST | `/api/admin/promote` | `admin` |
+| POST/GET | `/api/admin/roles`, `/roles/assign`, `/roles/remove`, `/roles/user/:id` | `admin` |
+| GET | `/internal/users` | interne (service à service) |
+| GET | `/health`, `/health/db`, `/version` | public |
+
+> ⚠️ Ce service expose **`/health`** (et non `/healthz` comme les autres services)
+> — c'est la convention d'origine, conservée.
+
+---
+
+## Jeton émis
+
+```json
+{
+  "sub": "<userId>",
+  "email": "user@example.com",
+  "tenant_id": "<restaurantId ou chaîne vide>",
+  "roles": ["manager"],
+  "role_slugs": ["manager"],
+  "exp": 1234567890
+}
+```
+
+Signature **HS256** avec `JWT_SECRET`, partagé avec tous les services.
+
+---
+
+## Lancement
+
+```bash
+docker network create microservices-net   # une seule fois, partagé
+cp .env.example .env
+docker compose up -d --build
+```
+
+### Variables d'environnement
+
+| Variable | Requis | Description |
+|---|---|---|
+| `PORT` | non (8081) | Port HTTP |
+| `DATABASE_URL` | oui | Chaîne GORM/Postgres |
+| `JWT_SECRET` | oui | Secret HS256 **partagé par tous les services** |
+| `FRANCHISE_SERVICE_URL` | non | Défaut `http://franchise-service:8089` |
+| `USER_SERVICE_URL` | non | Création du profil à l'inscription |
+| `AUTO_VERIFY_EMAIL` | non | `true` en dev : compte vérifié d'office (pas de SMTP) |
+| `CORS_ORIGINS` | non | Origines autorisées, séparées par des virgules |
+| `SMTP_*` | non | Envoi des emails de vérification et de réinitialisation |
+
+---
+
+## Tests
+
+```bash
+go test ./tests/          # tests unitaires et d'intégration (SQLite en mémoire)
+```
+
+---
+
+## CI/CD
+
+C'est **le seul projet doté d'un pipeline** (`.github/workflows/ci-cd.yml`, hérité
+du projet d'origine) : build, tests, analyse de sécurité, versionnement, build et
+publication Docker, déploiement Kubernetes.
+
+> ⚠️ Les **9 autres services n'ont aucune CI** — voir le README racine.
