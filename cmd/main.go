@@ -24,7 +24,7 @@ import (
 
 // @title           Auth Service API
 // @version         0.0.24
-// @description     Microservice d'authentification avec gestion multi-tenant et CI/CD automatisé
+// @description     Microservice d'authentification (credentials, tokens, rôles). Les restaurants sont gérés par franchise-service.
 // @termsOfService  http://swagger.io/terms/
 
 // @contact.name   API Support
@@ -61,7 +61,6 @@ func main() {
 					log.Println("[OK] Connexion à la base de données réussie")
 
 					if migrateErr := db.AutoMigrate(
-						&models.Tenant{},
 						&models.User{},
 						&models.Role{},
 						&models.UserRole{},
@@ -107,21 +106,19 @@ func main() {
 	if db != nil {
 		authRepo = repository.NewAuthRepository(db)
 	}
-	
+
 	emailService := services.NewEmailService()
 
 	// Services (peuvent gérer authRepo nil)
 	authService := services.NewAuthService(authRepo, emailService)
 	userAdminService := services.NewUserAdminService(authRepo)
 	roleService := services.NewRoleService(authRepo)
-	tenantService := services.NewTenantService(authRepo)
 
 	// Controllers
 	authController := controllers.NewAuthController(authService)
 	profileController := controllers.NewProfileController()
 	adminController := controllers.NewAdminController(userAdminService)
 	roleController := controllers.NewRoleController(roleService)
-	tenantController := controllers.NewTenantController(tenantService)
 
 	r := gin.Default()
 
@@ -133,7 +130,7 @@ func main() {
 			c.JSON(500, gin.H{"error": "Failed to load swagger.json"})
 			return
 		}
-		
+
 		// Remplacer le placeholder par l'IP publique si définie
 		swaggerStr := string(data)
 		publicIP := os.Getenv("PUBLIC_IP")
@@ -143,7 +140,7 @@ func main() {
 			// Fallback vers localhost si PUBLIC_IP n'est pas définie
 			swaggerStr = strings.ReplaceAll(swaggerStr, "PUBLIC_IP_PLACEHOLDER:30081", "localhost:8081")
 		}
-		
+
 		c.Header("Content-Type", "application/json")
 		c.String(200, swaggerStr)
 	})
@@ -294,14 +291,6 @@ func main() {
 		adminGroup.POST("/roles/assign", roleController.AssignRoleToUser)
 		adminGroup.POST("/roles/remove", roleController.RemoveRoleFromUser)
 		adminGroup.GET("/roles/user/:user_id", roleController.GetUserRoles)
-
-		// Gestion des tenants
-		adminGroup.POST("/tenants", tenantController.CreateTenant)
-		adminGroup.GET("/tenants", tenantController.GetAllTenants)
-		adminGroup.GET("/tenants/:id", tenantController.GetTenantByID)
-		adminGroup.GET("/tenants/slug/:slug", tenantController.GetTenantBySlug)
-		adminGroup.PUT("/tenants/:id", tenantController.UpdateTenant)
-		adminGroup.DELETE("/tenants/:id", tenantController.DeleteTenant)
 	}
 
 	port := os.Getenv("PORT")

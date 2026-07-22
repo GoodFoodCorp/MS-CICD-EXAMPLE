@@ -10,14 +10,14 @@ import (
 )
 
 func RateLimitMiddleware() gin.HandlerFunc {
-    store := memory.NewStore()
+	store := memory.NewStore()
 
-    instance := limiter.New(store, limiter.Rate{
-        Period: 1 * time.Minute,
-        Limit:  10,
-    })
+	instance := limiter.New(store, limiter.Rate{
+		Period: 1 * time.Minute,
+		Limit:  10,
+	})
 
-    middleware := mgin.NewMiddleware(instance)
+	middleware := mgin.NewMiddleware(instance)
 
-    return middleware
+	return middleware
 }

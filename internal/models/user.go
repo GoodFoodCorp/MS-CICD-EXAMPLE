@@ -8,9 +8,10 @@ import (
 )
 
 type User struct {
-	ID              string         `gorm:"primaryKey" json:"id"`
+	ID string `gorm:"primaryKey" json:"id"`
+	// Référence au restaurant (franchise-service) — pas de jointure : chaque
+	// service possède ses propres données.
 	TenantID        *string        `gorm:"index" json:"tenant_id"`
-	Tenant          *Tenant        `gorm:"foreignKey:TenantID;references:ID" json:"tenant,omitempty"`
 	Email           string         `gorm:"uniqueIndex;not null" json:"email"`
 	Password        string         `gorm:"not null" json:"-"`
 	IsEmailVerified bool           `gorm:"default:false" json:"is_email_verified"`

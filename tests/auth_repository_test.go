@@ -23,7 +23,6 @@ func SetupTestDB() (repository.AuthRepository, *gorm.DB) {
 	}
 
 	err = db.AutoMigrate(
-		&models.Tenant{},
 		&models.User{},
 		&models.Role{},
 		&models.RefreshToken{},
@@ -37,71 +36,18 @@ func SetupTestDB() (repository.AuthRepository, *gorm.DB) {
 	return repository.NewAuthRepository(db), db
 }
 
-func TestAuthRepository_Tenants(t *testing.T) {
-	repo, _ := SetupTestDB()
-
-	t.Run("CreateAndGetTenant", func(t *testing.T) {
-		tenant := &models.Tenant{
-			Name:     "Test Corp",
-			Slug:     "test-corp",
-			Plan:     "basic",
-			IsActive: true,
-		}
-
-		// Test Create
-		err := repo.CreateTenant(tenant)
-		assert.NoError(t, err)
-		assert.NotEmpty(t, tenant.ID)
-
-		// Test FindByID
-		fetched, err := repo.FindTenantByID(tenant.ID)
-		assert.NoError(t, err)
-		assert.Equal(t, "Test Corp", fetched.Name)
-
-		// Test FindBySlug
-		slugFetched, err := repo.FindTenantBySlug("test-corp")
-		assert.NoError(t, err)
-		assert.Equal(t, tenant.ID, slugFetched.ID)
-	})
-
-	t.Run("UpdateTenant", func(t *testing.T) {
-		// Création préalable
-		t1 := &models.Tenant{Name: "Old Name", Slug: "old"}
-		_ = repo.CreateTenant(t1)
-
-		// Update
-		updates := map[string]interface{}{"name": "New Name"}
-		err := repo.UpdateTenant(t1.ID, updates)
-		assert.NoError(t, err)
-
-		// Vérification
-		updated, _ := repo.FindTenantByID(t1.ID)
-		assert.Equal(t, "New Name", updated.Name)
-	})
-
-	t.Run("DeleteTenant", func(t *testing.T) {
-		t1 := &models.Tenant{Name: "To Delete", Slug: "del"}
-		_ = repo.CreateTenant(t1)
-
-		err := repo.DeleteTenant(t1.ID)
-		assert.NoError(t, err)
-
-		_, err = repo.FindTenantByID(t1.ID)
-		assert.Error(t, err)
-	})
-}
-
 func TestAuthRepository_Users(t *testing.T) {
 	repo, _ := SetupTestDB()
 
-	tenant := &models.Tenant{Name: "User Corp", Slug: "u-corp"}
-	_ = repo.CreateTenant(tenant)
+	// Le restaurant vit désormais dans franchise-service : on ne référence
+	// plus qu'un identifiant, sans jointure.
+	restaurantID := "11111111-1111-1111-1111-111111111111"
 
 	t.Run("CreateAndFindUser", func(t *testing.T) {
 		user := &models.User{
 			Email:    "test@user.com",
 			Password: "hashedpassword",
-			TenantID: &tenant.ID,
+			TenantID: &restaurantID,
 		}
 
 		// Create
@@ -110,7 +56,7 @@ func TestAuthRepository_Users(t *testing.T) {
 		assert.NotEmpty(t, user.ID)
 
 		// FindByEmail (Scoped by Tenant)
-		fetched, err := repo.FindByEmail("test@user.com", tenant.ID)
+		fetched, err := repo.FindByEmail("test@user.com", restaurantID)
 		assert.NoError(t, err)
 		assert.Equal(t, user.ID, fetched.ID)
 
@@ -121,7 +67,7 @@ func TestAuthRepository_Users(t *testing.T) {
 	})
 
 	t.Run("MarkUserAsVerified", func(t *testing.T) {
-		user := &models.User{Email: "v@v.com", TenantID: &tenant.ID, IsEmailVerified: false}
+		user := &models.User{Email: "v@v.com", TenantID: &restaurantID, IsEmailVerified: false}
 		_ = repo.CreateUser(user)
 
 		err := repo.MarkUserAsVerified(user.ID)
@@ -134,10 +80,9 @@ func TestAuthRepository_Users(t *testing.T) {
 
 func TestAuthRepository_Roles(t *testing.T) {
 	repo, db := SetupTestDB()
-	
-	tenant := &models.Tenant{Name: "Role Corp", Slug: "r-corp"}
-	_ = repo.CreateTenant(tenant)
-	user := &models.User{Email: "role@u.com", TenantID: &tenant.ID}
+
+	restaurantID := "22222222-2222-2222-2222-222222222222"
+	user := &models.User{Email: "role@u.com", TenantID: &restaurantID}
 	_ = repo.CreateUser(user)
 
 	t.Run("RolesFlow", func(t *testing.T) {
@@ -154,7 +99,7 @@ func TestAuthRepository_Roles(t *testing.T) {
 		// 3. Get User Roles
 		roles, err := repo.GetUserRoles(user.ID)
 		assert.NoError(t, err)
-		
+
 		if assert.Len(t, roles, 1) {
 			assert.Equal(t, "admin", roles[0].Name)
 		}
@@ -163,8 +108,8 @@ func TestAuthRepository_Roles(t *testing.T) {
 		err = repo.RemoveRoleFromUser(user.ID, role.ID)
 		assert.NoError(t, err)
 
-		db.Session(&gorm.Session{NewDB: true}) 
-		
+		db.Session(&gorm.Session{NewDB: true})
+
 		rolesAfter, _ := repo.GetUserRoles(user.ID)
 		assert.Len(t, rolesAfter, 0)
 	})
@@ -172,9 +117,8 @@ func TestAuthRepository_Roles(t *testing.T) {
 
 func TestAuthRepository_Tokens(t *testing.T) {
 	repo, _ := SetupTestDB()
-	tenant := &models.Tenant{Name: "T", Slug: "t"}
-	_ = repo.CreateTenant(tenant)
-	user := &models.User{Email: "tok@u.com", TenantID: &tenant.ID}
+	restaurantID := "33333333-3333-3333-3333-333333333333"
+	user := &models.User{Email: "tok@u.com", TenantID: &restaurantID}
 	_ = repo.CreateUser(user)
 
 	t.Run("RefreshToken", func(t *testing.T) {
@@ -184,7 +128,7 @@ func TestAuthRepository_Tokens(t *testing.T) {
 			ExpiresAt: time.Now().Add(time.Hour),
 			Revoked:   false,
 		}
-		
+
 		err := repo.CreateRefreshToken(rt)
 		assert.NoError(t, err)
 

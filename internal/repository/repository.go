@@ -7,13 +7,6 @@ import (
 )
 
 type AuthRepository interface {
-	// Tenants
-	CreateTenant(tenant *models.Tenant) error
-	FindTenantByID(id string) (*models.Tenant, error)
-	FindTenantBySlug(slug string) (*models.Tenant, error)
-	GetAllTenants(page int, limit int) ([]models.Tenant, int64, error)
-	UpdateTenant(id string, updates map[string]interface{}) error
-	DeleteTenant(id string) error
 
 	// Users
 	CreateUser(user *models.User) error

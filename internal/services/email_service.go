@@ -36,19 +36,19 @@ func NewEmailService() EmailService {
 
 func (s *emailService) SendVerificationEmail(to string, token string) error {
 	link := fmt.Sprintf("%s/verify-email?token=%s", os.Getenv("FRONTEND_URL"), token)
-	
+
 	m := gomail.NewMessage()
 	m.SetHeader("From", s.sender)
 	m.SetHeader("To", to)
 	m.SetHeader("Subject", "Vérifiez votre email - Mon Super SaaS")
-	
+
 	body := fmt.Sprintf(`
 		<h1>Bienvenue !</h1>
 		<p>Merci de vous être inscrit. Cliquez ci-dessous pour activer votre compte :</p>
 		<p><a href="%s" style="padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;">Vérifier mon email</a></p>
 		<p>Ou copiez ce lien : %s</p>
 	`, link, link)
-	
+
 	m.SetBody("text/html", body)
 
 	return s.dialer.DialAndSend(m)

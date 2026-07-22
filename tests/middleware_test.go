@@ -40,7 +40,7 @@ func TestAuthMiddleware(t *testing.T) {
 		middleware.AuthMiddleware()(c)
 
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
-		assert.Contains(t, w.Body.String(), "Cookie manquant")
+		assert.Contains(t, w.Body.String(), "token manquant")
 	})
 
 	t.Run("Invalid_Token", func(t *testing.T) {
@@ -58,10 +58,10 @@ func TestAuthMiddleware(t *testing.T) {
 	t.Run("Valid_Token_Success", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
-		
+
 		// Génération d'un vrai token
 		token := generateTestToken("test_secret_key", "User123", []string{"user"})
-		
+
 		c.Request, _ = http.NewRequest("GET", "/", nil)
 		c.Request.AddCookie(&http.Cookie{Name: "auth_token", Value: token})
 
@@ -69,7 +69,7 @@ func TestAuthMiddleware(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code) // 200 car c.Next() est appelé (le status par défaut est 200)
 		assert.False(t, c.IsAborted())
-		
+
 		// Vérification que les variables sont bien dans le contexte
 		val, exists := c.Get("userID")
 		assert.True(t, exists)
@@ -83,10 +83,10 @@ func TestRequireRole(t *testing.T) {
 	t.Run("Role_Authorized", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
-		
+
 		// Simulation : AuthMiddleware a déjà rempli le contexte
 		// ATTENTION : jwt-go renvoie des []interface{} pour les tableaux JSON, pas []string
-		roles := []interface{}{"admin", "editor"} 
+		roles := []interface{}{"admin", "editor"}
 		c.Set("roles", roles)
 
 		middleware.RequireRole("admin")(c)
@@ -98,7 +98,7 @@ func TestRequireRole(t *testing.T) {
 	t.Run("Role_Authorized_CaseInsensitive", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
-		
+
 		roles := []interface{}{"Admin"} // "Admin" avec majuscule
 		c.Set("roles", roles)
 
@@ -112,7 +112,7 @@ func TestRequireRole(t *testing.T) {
 	t.Run("Role_Forbidden", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
-		
+
 		roles := []interface{}{"user"}
 		c.Set("roles", roles)
 

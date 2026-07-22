@@ -147,39 +147,6 @@ func (m *MockAuthRepository) GetAllRoles() ([]models.Role, error) {
 	return args.Get(0).([]models.Role), args.Error(1)
 }
 
-func (m *MockAuthRepository) CreateTenant(t *models.Tenant) error {
-	return m.Called(t).Error(0)
-}
-
-func (m *MockAuthRepository) FindTenantByID(id string) (*models.Tenant, error) {
-	args := m.Called(id)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.Tenant), args.Error(1)
-}
-
-func (m *MockAuthRepository) FindTenantBySlug(slug string) (*models.Tenant, error) {
-	args := m.Called(slug)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.Tenant), args.Error(1)
-}
-
-func (m *MockAuthRepository) GetAllTenants(p, l int) ([]models.Tenant, int64, error) {
-	args := m.Called(p, l)
-	return args.Get(0).([]models.Tenant), args.Get(1).(int64), args.Error(2)
-}
-
-func (m *MockAuthRepository) UpdateTenant(id string, u map[string]interface{}) error {
-	return m.Called(id, u).Error(0)
-}
-
-func (m *MockAuthRepository) DeleteTenant(id string) error {
-	return m.Called(id).Error(0)
-}
-
 // ─── Email Service Mock ─────────────────────────────
 
 type MockEmailService struct {
@@ -297,47 +264,4 @@ func (m *MockRoleService) GetRoleBySlug(slug string) (*models.Role, error) {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*models.Role), args.Error(1)
-}
-
-// ─── TenantService Mock (pour TenantController) ─────
-
-type MockTenantService struct {
-	mock.Mock
-}
-
-func (m *MockTenantService) CreateTenant(req *models.CreateTenantRequest) (*models.Tenant, error) {
-	args := m.Called(req)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.Tenant), args.Error(1)
-}
-
-func (m *MockTenantService) GetTenantByID(id string) (*models.Tenant, error) {
-	args := m.Called(id)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.Tenant), args.Error(1)
-}
-
-func (m *MockTenantService) GetTenantBySlug(slug string) (*models.Tenant, error) {
-	args := m.Called(slug)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.Tenant), args.Error(1)
-}
-
-func (m *MockTenantService) GetAllTenants(page int, limit int) ([]models.Tenant, int64, error) {
-	args := m.Called(page, limit)
-	return args.Get(0).([]models.Tenant), args.Get(1).(int64), args.Error(2)
-}
-
-func (m *MockTenantService) UpdateTenant(id string, req *models.UpdateTenantRequest) error {
-	return m.Called(id, req).Error(0)
-}
-
-func (m *MockTenantService) DeleteTenant(id string) error {
-	return m.Called(id).Error(0)
 }

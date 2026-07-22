@@ -88,7 +88,15 @@ func (ctrl *AuthController) Login(c *gin.Context) {
 	isSecure := os.Getenv("ENV") == "production"
 	c.SetCookie("auth_token", accessToken, 900, "/", "", isSecure, true)
 	c.SetCookie("refresh_token", refreshToken, 604800, "/api/auth/refresh", "", isSecure, true)
-	c.JSON(http.StatusOK, gin.H{"message": "Authentification réussie"})
+	// Tokens also returned in the body so non-browser clients (mobile app,
+	// WebSocket handshake) can use the Authorization: Bearer scheme.
+	c.JSON(http.StatusOK, gin.H{
+		"message":       "Authentification réussie",
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
+		"token_type":    "Bearer",
+		"expires_in":    900,
+	})
 }
 
 // @Summary      Refresh token
@@ -99,8 +107,17 @@ func (ctrl *AuthController) Login(c *gin.Context) {
 // @Failure      401  {object} map[string]string "Token expired"
 // @Router       /api/auth/refresh [post]
 func (ctrl *AuthController) Refresh(c *gin.Context) {
+	// Cookie first (web), JSON body as fallback (mobile / non-browser clients)
 	old, err := c.Cookie("refresh_token")
-	if err != nil {
+	if err != nil || old == "" {
+		var body struct {
+			RefreshToken string `json:"refresh_token"`
+		}
+		if bindErr := c.ShouldBindJSON(&body); bindErr == nil && body.RefreshToken != "" {
+			old = body.RefreshToken
+		}
+	}
+	if old == "" {
 		c.JSON(401, gin.H{"error": "No token"})
 		return
 	}
@@ -112,7 +129,13 @@ func (ctrl *AuthController) Refresh(c *gin.Context) {
 	isSecure := os.Getenv("ENV") == "production"
 	c.SetCookie("auth_token", newA, 900, "/", "", isSecure, true)
 	c.SetCookie("refresh_token", newR, 604800, "/api/auth/refresh", "", isSecure, true)
-	c.JSON(200, gin.H{"message": "Refreshed"})
+	c.JSON(200, gin.H{
+		"message":       "Refreshed",
+		"access_token":  newA,
+		"refresh_token": newR,
+		"token_type":    "Bearer",
+		"expires_in":    900,
+	})
 }
 
 // @Summary      Logout user
@@ -122,7 +145,16 @@ func (ctrl *AuthController) Refresh(c *gin.Context) {
 // @Success      200  {object} map[string]string "Logout successful"
 // @Router       /api/auth/logout [post]
 func (ctrl *AuthController) Logout(c *gin.Context) {
+	// Cookie first (web), JSON body as fallback (mobile / non-browser clients)
 	rt, _ := c.Cookie("refresh_token")
+	if rt == "" {
+		var body struct {
+			RefreshToken string `json:"refresh_token"`
+		}
+		if bindErr := c.ShouldBindJSON(&body); bindErr == nil {
+			rt = body.RefreshToken
+		}
+	}
 	if rt != "" {
 		ctrl.service.LogoutUser(rt)
 	}

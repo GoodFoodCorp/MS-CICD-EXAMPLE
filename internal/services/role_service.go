@@ -6,7 +6,6 @@ import (
 	"errors"
 )
 
-
 type RoleService interface {
 	CreateRole(name, description string) error
 	AssignRoleToUser(userID string, roleID uint) error

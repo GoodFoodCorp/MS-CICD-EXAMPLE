@@ -2,22 +2,22 @@ package seeder
 
 import (
 	"auth-service/internal/models"
+	"auth-service/internal/services"
 	"log"
 	"os"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
-// Seed initialise les données par défaut (tenant, roles, utilisateurs)
+// Seed initialise les données par défaut (restaurants/tenants, rôles, utilisateurs)
 func Seed(db *gorm.DB) error {
 	log.Println("Exécution du seeder...")
 
-	// Créer le tenant par défaut
-	tenant, err := seedDefaultTenant(db)
-	if err != nil {
-		return err
-	}
+	// Les restaurants (franchises) appartiennent désormais à franchise-service :
+	// on récupère leurs identifiants pour y rattacher les managers.
+	restaurants := fetchRestaurants()
 
 	// Créer les rôles par défaut
 	roles, err := seedDefaultRoles(db)
@@ -26,7 +26,7 @@ func Seed(db *gorm.DB) error {
 	}
 
 	// Créer les utilisateurs par défaut
-	if err := seedUsers(db, tenant.ID, roles); err != nil {
+	if err := seedUsers(db, restaurants, roles); err != nil {
 		return err
 	}
 
@@ -34,28 +34,22 @@ func Seed(db *gorm.DB) error {
 	return nil
 }
 
-func seedDefaultTenant(db *gorm.DB) (*models.Tenant, error) {
-	var tenant models.Tenant
-	result := db.Where("slug = ?", "default").First(&tenant)
-
-	if result.Error == gorm.ErrRecordNotFound {
-		tenant = models.Tenant{
-			Name:     "Default",
-			Slug:     "default",
-			Plan:     "free",
-			IsActive: true,
+// fetchRestaurants interroge franchise-service (propriétaire des restaurants)
+// et indexe les restaurants par slug. Best-effort avec quelques essais : si le
+// service n'est pas encore prêt, les managers ne seront pas rattachés à cette
+// exécution — un redémarrage rattrape le coup.
+func fetchRestaurants() map[string]services.Restaurant {
+	for attempt := 1; attempt <= 5; attempt++ {
+		bySlug, err := services.FetchRestaurantsBySlug()
+		if err == nil {
+			log.Printf("  • %d restaurant(s) récupéré(s) depuis franchise-service\n", len(bySlug))
+			return bySlug
 		}
-		if err := db.Create(&tenant).Error; err != nil {
-			return nil, err
-		}
-		log.Println("  ✓ Tenant 'default' créé")
-	} else if result.Error != nil {
-		return nil, result.Error
-	} else {
-		log.Println("  • Tenant 'default' existe déjà")
+		log.Printf("  [RETRY] franchise-service injoignable (%d/5): %v\n", attempt, err)
+		time.Sleep(3 * time.Second)
 	}
-
-	return &tenant, nil
+	log.Println("  [WARNING] franchise-service injoignable : les managers ne seront pas rattachés à un restaurant")
+	return map[string]services.Restaurant{}
 }
 
 func seedDefaultRoles(db *gorm.DB) (map[string]*models.Role, error) {
@@ -68,6 +62,7 @@ func seedDefaultRoles(db *gorm.DB) (map[string]*models.Role, error) {
 		{"manager", "manager", "Gérant de restaurant (tenant)"},
 		{"user", "user", "Utilisateur standard (client)"},
 		{"moderator", "moderator", "Modérateur avec droits limités"},
+		{"livreur", "livreur", "Livreur (coursier, non lié à un tenant)"},
 	}
 
 	rolesMap := make(map[string]*models.Role)
@@ -98,11 +93,25 @@ func seedDefaultRoles(db *gorm.DB) (map[string]*models.Role, error) {
 	return rolesMap, nil
 }
 
-// seedUsers crée les 3 utilisateurs par défaut :
-// 1. Admin (avec tenant) — gère tout
-// 2. Manager (avec tenant) — gère son restaurant
-// 3. Customer (sans tenant) — commande dans n'importe quel restaurant
-func seedUsers(db *gorm.DB, tenantID string, roles map[string]*models.Role) error {
+// seedUsers crée les utilisateurs par défaut :
+//  1. Admin (siège) — gère tout
+//  2. Manager République — gère le restaurant Good Food République
+//  3. Manager Montparnasse — gère le restaurant Good Food Montparnasse
+//  4. Customer (sans tenant) — commande dans n'importe quel restaurant
+//  5. Livreur (sans tenant)
+func seedUsers(db *gorm.DB, restaurants map[string]services.Restaurant, roles map[string]*models.Role) error {
+	// Un pointeur nil laisse l'utilisateur sans restaurant (client, livreur, ou
+	// manager si franchise-service n'a pas répondu).
+	restaurantID := func(slug string) *string {
+		if r, ok := restaurants[slug]; ok {
+			id := r.ID
+			return &id
+		}
+		return nil
+	}
+	republique := restaurantID("default")
+	montparnasse := restaurantID("montparnasse")
+
 	type seedUser struct {
 		Email    string
 		Password string
@@ -119,18 +128,27 @@ func seedUsers(db *gorm.DB, tenantID string, roles map[string]*models.Role) erro
 			Password: "Admin123!",
 			EnvEmail: "ADMIN_EMAIL",
 			EnvPass:  "ADMIN_PASSWORD",
-			TenantID: &tenantID,
+			TenantID: republique,
 			RoleSlug: "admin",
-			Label:    "Admin",
+			Label:    "Admin (siège)",
 		},
 		{
 			Email:    "manager@example.com",
 			Password: "Manager123!",
 			EnvEmail: "MANAGER_EMAIL",
 			EnvPass:  "MANAGER_PASSWORD",
-			TenantID: &tenantID,
+			TenantID: republique,
 			RoleSlug: "manager",
-			Label:    "Manager (restaurant)",
+			Label:    "Manager (République)",
+		},
+		{
+			Email:    "manager2@example.com",
+			Password: "Manager123!",
+			EnvEmail: "MANAGER2_EMAIL",
+			EnvPass:  "MANAGER2_PASSWORD",
+			TenantID: montparnasse,
+			RoleSlug: "manager",
+			Label:    "Manager (Montparnasse)",
 		},
 		{
 			Email:    "user@example.com",
@@ -140,6 +158,15 @@ func seedUsers(db *gorm.DB, tenantID string, roles map[string]*models.Role) erro
 			TenantID: nil,
 			RoleSlug: "user",
 			Label:    "Customer (sans tenant)",
+		},
+		{
+			Email:    "livreur@example.com",
+			Password: "Livreur123!",
+			EnvEmail: "LIVREUR_EMAIL",
+			EnvPass:  "LIVREUR_PASSWORD",
+			TenantID: nil,
+			RoleSlug: "livreur",
+			Label:    "Livreur (sans tenant)",
 		},
 	}
 

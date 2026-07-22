@@ -27,8 +27,8 @@ func (r *Role) BeforeCreate(tx *gorm.DB) (err error) {
 }
 
 type UserRole struct {
-	ID        uint      `gorm:"primaryKey"`
-	UserID    string    `gorm:"index;not null"`
-	RoleID    uint      `gorm:"index;not null"`
+	ID        uint   `gorm:"primaryKey"`
+	UserID    string `gorm:"index;not null"`
+	RoleID    uint   `gorm:"index;not null"`
 	CreatedAt time.Time
 }

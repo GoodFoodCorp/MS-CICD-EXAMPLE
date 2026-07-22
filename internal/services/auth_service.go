@@ -112,10 +112,14 @@ func (s *authService) RegisterUser(req *models.RegisterRequest) (string, error) 
 		return "", err
 	}
 
+	// En dev (AUTO_VERIFY_EMAIL=true), on crée le compte déjà vérifié car
+	// aucun SMTP n'est configuré — le client peut se connecter immédiatement.
+	autoVerify := os.Getenv("AUTO_VERIFY_EMAIL") == "true"
+
 	user := &models.User{
 		Email:           req.Email,
 		Password:        string(hashed),
-		IsEmailVerified: false,
+		IsEmailVerified: autoVerify,
 	}
 
 	// Si un tenantID est fourni, on l'assigne (utilisateur tenant/restaurant)
@@ -135,17 +139,20 @@ func (s *authService) RegisterUser(req *models.RegisterRequest) (string, error) 
 		}
 	}
 
-	token, _ := generateTokenString()
-	emailToken := &models.EmailVerificationToken{
-		UserID:    user.ID,
-		Token:     token,
-		ExpiresAt: time.Now().Add(24 * time.Hour),
-	}
-	s.repo.CreateEmailVerificationToken(emailToken)
+	// Si l'email est déjà vérifié (mode dev), pas de token ni d'email à envoyer.
+	if !autoVerify {
+		token, _ := generateTokenString()
+		emailToken := &models.EmailVerificationToken{
+			UserID:    user.ID,
+			Token:     token,
+			ExpiresAt: time.Now().Add(24 * time.Hour),
+		}
+		s.repo.CreateEmailVerificationToken(emailToken)
 
-	go func() {
-		s.email.SendVerificationEmail(user.Email, token)
-	}()
+		go func() {
+			s.email.SendVerificationEmail(user.Email, token)
+		}()
+	}
 
 	// Crée un profil vierge dans user-service (async, non bloquant)
 	go NotifyUserServiceProfileCreation(user.ID)
