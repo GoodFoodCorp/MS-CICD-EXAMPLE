@@ -1,4 +1,4 @@
-name: CI Docker front-web
+name: CI Docker auth-service
 
 on:
   push:
