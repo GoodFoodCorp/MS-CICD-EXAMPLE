@@ -165,7 +165,8 @@ docker compose up -d --build
 | `FRANCHISE_SERVICE_URL` | non | Défaut `http://franchise-service:8089` |
 | `USER_SERVICE_URL` | non | Création du profil à l'inscription |
 | `AUTO_VERIFY_EMAIL` | non | `true` en dev : compte vérifié d'office (pas de SMTP) |
-| `CORS_ORIGINS` | non | Origines autorisées, séparées par des virgules |
+| `FRONTEND_URL` | non | URL front principale (ajoutée automatiquement aux origines CORS autorisées) |
+| `CORS_ORIGINS` | non | Origines CORS additionnelles, séparées par des virgules |
 | `SMTP_*` | non | Envoi des emails de vérification et de réinitialisation |
 
 ---

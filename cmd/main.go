@@ -9,7 +9,9 @@ import (
 	"auth-service/internal/seeder"
 	"auth-service/internal/services"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -170,12 +172,55 @@ func main() {
 	})
 
 	// CORS origins configurables
-	corsOrigins := []string{"http://localhost:3000", "http://localhost:5173"}
-	if extra := os.Getenv("CORS_ORIGINS"); extra != "" {
-		for _, origin := range strings.Split(extra, ",") {
-			corsOrigins = append(corsOrigins, strings.TrimSpace(origin))
+	originSet := map[string]struct{}{}
+	corsOrigins := make([]string, 0, 6)
+	appendOrigin := func(raw string) {
+		origin := strings.TrimSpace(raw)
+		if origin == "" {
+			return
+		}
+		origin = strings.TrimRight(origin, "/")
+		if _, err := url.ParseRequestURI(origin); err != nil {
+			log.Printf("[WARNING] Origine CORS ignorée (invalide): %q", raw)
+			return
+		}
+		if _, exists := originSet[origin]; exists {
+			return
+		}
+		originSet[origin] = struct{}{}
+		corsOrigins = append(corsOrigins, origin)
+	}
+
+	appendOrigin("http://localhost:3000")
+	appendOrigin("http://localhost:5173")
+
+	if frontURL := os.Getenv("FRONTEND_URL"); frontURL != "" {
+		appendOrigin(frontURL)
+		if u, err := url.Parse(strings.TrimSpace(frontURL)); err == nil {
+			host := u.Hostname()
+			if host != "" && host != "localhost" && net.ParseIP(host) == nil {
+				variantHost := ""
+				if strings.HasPrefix(host, "www.") {
+					variantHost = strings.TrimPrefix(host, "www.")
+				} else {
+					variantHost = "www." + host
+				}
+				if port := u.Port(); port != "" {
+					variantHost = variantHost + ":" + port
+				}
+				u.Host = variantHost
+				appendOrigin(u.String())
+			}
 		}
 	}
+
+	if extra := os.Getenv("CORS_ORIGINS"); extra != "" {
+		for _, origin := range strings.Split(extra, ",") {
+			appendOrigin(origin)
+		}
+	}
+
+	log.Printf("[INFO] CORS origins autorisées: %s", strings.Join(corsOrigins, ", "))
 
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     corsOrigins,
