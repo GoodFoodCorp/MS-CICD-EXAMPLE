@@ -3,7 +3,7 @@ name: CI Docker auth-service
 on:
   push:
     branches:
-      - deploy-automed
+      - develop
 
 jobs:
   build:
