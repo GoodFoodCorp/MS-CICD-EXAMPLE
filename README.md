@@ -3,13 +3,13 @@
 Microservice **Go** d'**authentification** : identifiants, jetons et rôles. C'est
 lui qui émet les JWT que **tous** les autres services valident.
 
-| | |
-|---|---|
-| **Langage / techno** | Go 1.26, Gin, GORM, PostgreSQL, JWT HS256, bcrypt |
-| **Base de données** | PostgreSQL (interne au compose, non exposée) |
-| **Port HTTP** | `8081` |
-| **Documentation API** | http://localhost:8081/scalar |
-| **Explorateur de base** | http://localhost:8090 (adminer, dev) |
+|                         |                                                   |
+| ----------------------- | ------------------------------------------------- |
+| **Langage / techno**    | Go 1.26, Gin, GORM, PostgreSQL, JWT HS256, bcrypt |
+| **Base de données**     | PostgreSQL (interne au compose, non exposée)      |
+| **Port HTTP**           | `8081`                                            |
+| **Documentation API**   | http://localhost:8081/scalar                      |
+| **Explorateur de base** | http://localhost:8090 (adminer, dev)              |
 
 > ℹ️ **Ce service ne gère plus les restaurants.** Ils appartenaient
 > historiquement à ce service sous le nom de « tenants » ; ils ont été déplacés
@@ -45,6 +45,7 @@ ensuite.
 ## Fonctionnalités
 
 ### Authentification
+
 - **Inscription** d'un client (rôle `user` attribué automatiquement)
 - **Connexion** : renvoie un jeton d'accès (15 min) et un jeton de
   rafraîchissement (7 jours), **à la fois en cookies HttpOnly et dans le corps de
@@ -58,12 +59,14 @@ ensuite.
 - **Rate limiting** sur les routes d'authentification
 
 ### Rôles et administration
+
 - Création de rôles, attribution et retrait à un utilisateur
 - Consultation des rôles d'un utilisateur
 - Liste, recherche et consultation des utilisateurs (siège)
 - Promotion d'un utilisateur en administrateur
 
 ### Intégrations sortantes
+
 - À l'inscription, demande à **`user-service`** de créer un profil vierge
   (`POST /internal/profiles`, non bloquant)
 - Au démarrage, récupère les restaurants depuis **`franchise-service`** pour
@@ -71,33 +74,33 @@ ensuite.
 
 ### Comptes créés au démarrage (seeder)
 
-| Rôle | Email | Mot de passe |
-|---|---|---|
-| `admin` | `admin@example.com` | `Admin123!` |
-| `manager` (République) | `manager@example.com` | `Manager123!` |
+| Rôle                     | Email                  | Mot de passe  |
+| ------------------------ | ---------------------- | ------------- |
+| `admin`                  | `admin@example.com`    | `Admin123!`   |
+| `manager` (République)   | `manager@example.com`  | `Manager123!` |
 | `manager` (Montparnasse) | `manager2@example.com` | `Manager123!` |
-| `user` | `user@example.com` | `User1234!` |
-| `livreur` | `livreur@example.com` | `Livreur123!` |
+| `user`                   | `user@example.com`     | `User1234!`   |
+| `livreur`                | `livreur@example.com`  | `Livreur123!` |
 
 ---
 
 ## Endpoints
 
-| Méthode | Route | Accès |
-|---|---|---|
-| POST | `/api/auth/register` | public |
-| POST | `/api/auth/login` | public |
-| POST | `/api/auth/refresh` | public (jeton de rafraîchissement) |
-| POST | `/api/auth/logout` | public |
-| GET | `/api/auth/verify-email` | public (lien email) |
-| POST | `/api/auth/forgot-password` | public |
-| POST | `/api/auth/reset-password` | public (jeton) |
-| GET | `/api/user/me` | authentifié |
-| GET | `/api/admin/users`, `/users/:id`, `/search` | `admin` |
-| POST | `/api/admin/promote` | `admin` |
-| POST/GET | `/api/admin/roles`, `/roles/assign`, `/roles/remove`, `/roles/user/:id` | `admin` |
-| GET | `/internal/users` | interne (service à service) |
-| GET | `/health`, `/health/db`, `/version` | public |
+| Méthode  | Route                                                                   | Accès                              |
+| -------- | ----------------------------------------------------------------------- | ---------------------------------- |
+| POST     | `/api/auth/register`                                                    | public                             |
+| POST     | `/api/auth/login`                                                       | public                             |
+| POST     | `/api/auth/refresh`                                                     | public (jeton de rafraîchissement) |
+| POST     | `/api/auth/logout`                                                      | public                             |
+| GET      | `/api/auth/verify-email`                                                | public (lien email)                |
+| POST     | `/api/auth/forgot-password`                                             | public                             |
+| POST     | `/api/auth/reset-password`                                              | public (jeton)                     |
+| GET      | `/api/user/me`                                                          | authentifié                        |
+| GET      | `/api/admin/users`, `/users/:id`, `/search`                             | `admin`                            |
+| POST     | `/api/admin/promote`                                                    | `admin`                            |
+| POST/GET | `/api/admin/roles`, `/roles/assign`, `/roles/remove`, `/roles/user/:id` | `admin`                            |
+| GET      | `/internal/users`                                                       | interne (service à service)        |
+| GET      | `/health`, `/health/db`, `/version`                                     | public                             |
 
 > ⚠️ Ce service expose **`/health`** (et non `/healthz` comme les autres services)
 > — c'est la convention d'origine, conservée.
@@ -127,11 +130,11 @@ Signature **HS256** avec `JWT_SECRET`, partagé avec tous les services.
 > 🟠 nécessaire à une fonctionnalité (le reste continue de marcher) ·
 > 🟡 optionnelle (dégradation silencieuse, journalisée)
 
-| Dépendance | Type | Conséquence si absente |
-|---|---|---|
-| **PostgreSQL** (`auth-db`) | 🔴 | Le service démarre en mode dégradé et renvoie `503` |
-| **franchise-service** | 🟡 | Au démarrage uniquement : sert à rattacher les managers à leur restaurant. Après 5 essais, le seeder abandonne avec un avertissement et les managers n'ont **pas** de `tenant_id` (leur portail sera vide). Un redémarrage de `auth-service` rattrape le coup. |
-| **user-service** | 🟡 | À l'inscription uniquement : la création du profil vierge est un appel **non bloquant**. Sans lui, le compte est créé normalement et le profil sera généré à la volée au premier accès. |
+| Dépendance                 | Type | Conséquence si absente                                                                                                                                                                                                                                         |
+| -------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **PostgreSQL** (`auth-db`) | 🔴   | Le service démarre en mode dégradé et renvoie `503`                                                                                                                                                                                                            |
+| **franchise-service**      | 🟡   | Au démarrage uniquement : sert à rattacher les managers à leur restaurant. Après 5 essais, le seeder abandonne avec un avertissement et les managers n'ont **pas** de `tenant_id` (leur portail sera vide). Un redémarrage de `auth-service` rattrape le coup. |
+| **user-service**           | 🟡   | À l'inscription uniquement : la création du profil vierge est un appel **non bloquant**. Sans lui, le compte est créé normalement et le profil sera généré à la volée au premier accès.                                                                        |
 
 **Aucune autre dépendance.** `auth-service` fonctionne seul avec sa base.
 
@@ -157,16 +160,16 @@ docker compose up -d --build
 
 ### Variables d'environnement
 
-| Variable | Requis | Description |
-|---|---|---|
-| `PORT` | non (8081) | Port HTTP |
-| `DATABASE_URL` | oui | Chaîne GORM/Postgres |
-| `JWT_SECRET` | oui | Secret HS256 **partagé par tous les services** |
-| `FRANCHISE_SERVICE_URL` | non | Défaut `http://franchise-service:8089` |
-| `USER_SERVICE_URL` | non | Création du profil à l'inscription |
-| `AUTO_VERIFY_EMAIL` | non | `true` en dev : compte vérifié d'office (pas de SMTP) |
-| `CORS_ORIGINS` | non | Origines autorisées, séparées par des virgules |
-| `SMTP_*` | non | Envoi des emails de vérification et de réinitialisation |
+| Variable                | Requis     | Description                                                                    |
+| ----------------------- | ---------- | ------------------------------------------------------------------------------ |
+| `PORT`                  | non (8081) | Port HTTP                                                                      |
+| `DATABASE_URL`          | oui        | Chaîne GORM/Postgres                                                           |
+| `JWT_SECRET`            | oui        | Secret HS256 **partagé par tous les services**                                 |
+| `FRANCHISE_SERVICE_URL` | non        | Défaut `http://franchise-service:8089`                                         |
+| `USER_SERVICE_URL`      | non        | Création du profil à l'inscription                                             |
+| `AUTO_VERIFY_EMAIL`     | non        | `true` en dev : compte vérifié d'office (pas de SMTP)                          |
+| `FRONTEND_URL`          | non        | URL front utilisée dans les liens d'email (vérification et reset mot de passe) |
+| `SMTP_*`                | non        | Envoi des emails de vérification et de réinitialisation                        |
 
 ---
 
