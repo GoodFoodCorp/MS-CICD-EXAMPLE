@@ -41,3 +41,9 @@ func (r *authRepo) FindGlobalByEmail(email string) (*models.User, error) {
 	return &user, err
 
 }
+
+// DeleteUser soft-deletes the account (GORM's DeletedAt) — reversible at the
+// database level, and the unique email index still protects re-registration.
+func (r *authRepo) DeleteUser(userID string) error {
+	return r.db.Delete(&models.User{}, "id = ?", userID).Error
+}

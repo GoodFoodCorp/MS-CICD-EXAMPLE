@@ -101,6 +101,14 @@ func (m *MockAuthRepository) RevokeRefreshToken(token string) error {
 	return m.Called(token).Error(0)
 }
 
+func (m *MockAuthRepository) RevokeAllRefreshTokensForUser(userID string) error {
+	return m.Called(userID).Error(0)
+}
+
+func (m *MockAuthRepository) DeleteUser(userID string) error {
+	return m.Called(userID).Error(0)
+}
+
 func (m *MockAuthRepository) CreateRole(role *models.Role) error {
 	return m.Called(role).Error(0)
 }
@@ -197,6 +205,14 @@ func (m *MockAuthService) ForgotPassword(req *models.ForgotPasswordRequest) (str
 
 func (m *MockAuthService) ResetPassword(req *models.ResetPasswordRequest) error {
 	return m.Called(req).Error(0)
+}
+
+func (m *MockAuthService) ChangePassword(userID string, req *models.ChangePasswordRequest) error {
+	return m.Called(userID, req).Error(0)
+}
+
+func (m *MockAuthService) DeleteAccount(userID string, req *models.DeleteAccountRequest) error {
+	return m.Called(userID, req).Error(0)
 }
 
 // ─── UserAdminService Mock (pour AdminController) ───

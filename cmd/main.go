@@ -115,7 +115,7 @@ func main() {
 
 	// Controllers
 	authController := controllers.NewAuthController(authService)
-	profileController := controllers.NewProfileController()
+	profileController := controllers.NewProfileController(authService)
 	adminController := controllers.NewAdminController(userAdminService)
 	roleController := controllers.NewRoleController(roleService)
 
@@ -216,6 +216,8 @@ func main() {
 	protected.Use(middleware.AuthMiddleware())
 	{
 		protected.GET("/me", profileController.GetProfile)
+		protected.PUT("/me/password", profileController.ChangePassword)
+		protected.DELETE("/me", profileController.DeleteAccount)
 	}
 
 	// ── Endpoints internes (service-to-service, pas de JWT) ──
