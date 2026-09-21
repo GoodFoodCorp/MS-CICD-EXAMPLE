@@ -158,3 +158,51 @@ func TestOAuthProviders_UnconfiguredProviderCannotStartAFlow(t *testing.T) {
 	_, err := services.NewOAuthService().AuthorizeURL("microsoft", "state")
 	assert.ErrorContains(t, err, "non configuré")
 }
+
+// ─── nOAuth : l'email Microsoft ne prouve rien par défaut ──
+
+// Un tenant Entra se crée gratuitement et son administrateur y déclare l'email
+// qu'il veut sur un domaine non vérifié. Sur le endpoint `common`, l'email
+// renvoyé ne prouve donc pas que l'utilisateur le possède : le traiter comme
+// vérifié permettrait de s'emparer de n'importe quel compte existant.
+func TestOAuthProviders_MicrosoftCommonTenantDoesNotTrustEmail(t *testing.T) {
+	os.Setenv("MICROSOFT_CLIENT_ID", "mid")
+	os.Setenv("MICROSOFT_CLIENT_SECRET", "msecret")
+	os.Unsetenv("MICROSOFT_TENANT_ID")
+	defer os.Unsetenv("MICROSOFT_CLIENT_ID")
+	defer os.Unsetenv("MICROSOFT_CLIENT_SECRET")
+
+	url, err := services.NewOAuthService().AuthorizeURL("microsoft", "state")
+	assert.NoError(t, err)
+	assert.Contains(t, url, "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+		"sans tenant configuré, le endpoint multi-tenant reste utilisé")
+
+	assert.False(t, services.ProviderTrustsEmail("microsoft"),
+		"l'email d'un tenant quelconque ne doit jamais suffire à rejoindre un compte")
+}
+
+// Un tenant précis : son annuaire fait autorité, l'email redevient exploitable.
+func TestOAuthProviders_PinnedMicrosoftTenantTrustsEmail(t *testing.T) {
+	os.Setenv("MICROSOFT_CLIENT_ID", "mid")
+	os.Setenv("MICROSOFT_CLIENT_SECRET", "msecret")
+	os.Setenv("MICROSOFT_TENANT_ID", "contoso.onmicrosoft.com")
+	defer os.Unsetenv("MICROSOFT_CLIENT_ID")
+	defer os.Unsetenv("MICROSOFT_CLIENT_SECRET")
+	defer os.Unsetenv("MICROSOFT_TENANT_ID")
+
+	url, err := services.NewOAuthService().AuthorizeURL("microsoft", "state")
+	assert.NoError(t, err)
+	assert.Contains(t, url, "contoso.onmicrosoft.com")
+	assert.True(t, services.ProviderTrustsEmail("microsoft"))
+}
+
+// Google certifie l'email : c'est le claim `email_verified` qui tranche, pas
+// une confiance accordée d'office au fournisseur.
+func TestOAuthProviders_GoogleNeverTrustsEmailBlindly(t *testing.T) {
+	os.Setenv("GOOGLE_CLIENT_ID", "gid")
+	os.Setenv("GOOGLE_CLIENT_SECRET", "gsecret")
+	defer os.Unsetenv("GOOGLE_CLIENT_ID")
+	defer os.Unsetenv("GOOGLE_CLIENT_SECRET")
+
+	assert.False(t, services.ProviderTrustsEmail("google"))
+}

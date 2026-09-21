@@ -75,6 +75,15 @@ plateforme ne connaît que le JWT Good Food.
   externe y est lié — **uniquement si le fournisseur certifie l'email**. Sans
   cette garantie, la connexion est refusée plutôt que de risquer la prise de
   contrôle d'un compte existant.
+- **Cas Microsoft (attaque « nOAuth »)** : sur le endpoint multi-tenant
+  (`common`), l'email renvoyé **ne prouve rien**. N'importe qui peut créer un
+  tenant Entra gratuit et y déclarer l'adresse d'un de vos utilisateurs sur un
+  domaine non vérifié. Par défaut, une connexion Microsoft ne peut donc
+  **jamais** rejoindre un compte existant. Deux réglages lèvent la restriction :
+  renseigner `MICROSOFT_TENANT_ID` (l'annuaire de votre tenant fait alors
+  autorité), ou activer le claim optionnel **`xms_edov`** dans l'inscription
+  d'application — la mitigation officielle de Microsoft, que ce service lit
+  automatiquement dans le jeton d'identité.
 - **Premier accès** : création d'un compte client vérifié, sans mot de passe
   utilisable (un secret aléatoire satisfait la contrainte, personne ne le connaît).
 

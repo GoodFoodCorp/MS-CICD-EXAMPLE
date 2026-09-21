@@ -2,6 +2,7 @@ package services
 
 import (
 	"auth-service/internal/models"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,11 +25,11 @@ type providerConfig struct {
 	Scopes       string
 	ClientID     string
 	ClientSecret string
-	// AssumeEmailVerified sert aux fournisseurs qui ne renvoient pas le claim
-	// `email_verified` alors qu'ils garantissent l'email par ailleurs. Ce flag
-	// conditionne le rattachement à un compte existant : ne l'activer que pour
-	// un fournisseur de confiance.
-	AssumeEmailVerified bool
+	// EmailIsTrusted vaut true quand le fournisseur garantit lui-même que
+	// l'utilisateur possède l'adresse annoncée. Conditionne le rattachement à
+	// un compte local existant : un `true` de trop, et n'importe qui peut
+	// s'emparer d'un compte en déclarant son email chez le fournisseur.
+	EmailIsTrusted bool
 }
 
 var providerCatalog = map[string]func() providerConfig{
@@ -44,18 +45,29 @@ var providerCatalog = map[string]func() providerConfig{
 		}
 	},
 	"microsoft": func() providerConfig {
+		// Par défaut `common` : n'importe quel tenant Entra peut se connecter.
+		// Or un tenant se crée gratuitement, et son administrateur y déclare
+		// l'email qu'il veut sur un domaine non vérifié — y compris celui d'un
+		// de nos utilisateurs. C'est l'attaque « nOAuth » : l'email seul ne
+		// prouve donc RIEN et ne peut pas servir à rejoindre un compte existant.
+		//
+		// Deux situations lèvent le doute, et elles seules :
+		//   - un tenant précis est configuré : son annuaire fait autorité ;
+		//   - le jeton porte `xms_edov` (mitigation officielle de Microsoft),
+		//     qui atteste que le domaine de l'email a bien été vérifié.
+		tenant := os.Getenv("MICROSOFT_TENANT_ID")
+		if tenant == "" {
+			tenant = "common"
+		}
 		return providerConfig{
-			Label:       "Microsoft",
-			AuthURL:     "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-			TokenURL:    "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-			UserInfoURL: "https://graph.microsoft.com/oidc/userinfo",
-			Scopes:      "openid email profile",
-			// L'endpoint OIDC de Microsoft ne renvoie pas `email_verified` :
-			// sans ce flag, aucune connexion Microsoft ne pourrait jamais
-			// rejoindre un compte existant.
-			AssumeEmailVerified: true,
-			ClientID:            os.Getenv("MICROSOFT_CLIENT_ID"),
-			ClientSecret:        os.Getenv("MICROSOFT_CLIENT_SECRET"),
+			Label:          "Microsoft",
+			AuthURL:        "https://login.microsoftonline.com/" + tenant + "/oauth2/v2.0/authorize",
+			TokenURL:       "https://login.microsoftonline.com/" + tenant + "/oauth2/v2.0/token",
+			UserInfoURL:    "https://graph.microsoft.com/oidc/userinfo",
+			Scopes:         "openid email profile",
+			EmailIsTrusted: tenant != "common",
+			ClientID:       os.Getenv("MICROSOFT_CLIENT_ID"),
+			ClientSecret:   os.Getenv("MICROSOFT_CLIENT_SECRET"),
 		}
 	},
 }
@@ -137,6 +149,7 @@ func (s *oauthService) AuthorizeURL(provider, state string) (string, error) {
 
 type tokenResponse struct {
 	AccessToken      string `json:"access_token"`
+	IDToken          string `json:"id_token"`
 	Error            string `json:"error"`
 	ErrorDescription string `json:"error_description"`
 }
@@ -184,7 +197,37 @@ func (s *oauthService) ExchangeCode(provider, code string) (*models.OAuthProfile
 		return nil, err
 	}
 	profile.Provider = provider
+
+	// Mitigation officielle de Microsoft contre nOAuth : `xms_edov` atteste que
+	// le domaine de l'email a bien été vérifié par son propriétaire. Le claim
+	// n'existe que dans le jeton d'identité, pas dans /userinfo.
+	if !profile.EmailVerified && emailDomainOwnerVerified(token.IDToken) {
+		profile.EmailVerified = true
+	}
 	return profile, nil
+}
+
+// emailDomainOwnerVerified lit `xms_edov` dans le jeton d'identité.
+//
+// La signature n'est pas revérifiée : le jeton vient d'être récupéré
+// directement auprès du endpoint token du fournisseur, sur une connexion TLS
+// authentifiée — c'est le cas que l'OIDC Core §3.1.3.7 dispense de validation.
+func emailDomainOwnerVerified(idToken string) bool {
+	parts := strings.Split(idToken, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return false
+	}
+	var claims struct {
+		EmailDomainOwnerVerified any `json:"xms_edov"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return false
+	}
+	return isVerified(claims.EmailDomainOwnerVerified)
 }
 
 func (s *oauthService) fetchUserInfo(cfg providerConfig, accessToken string) (*models.OAuthProfile, error) {
@@ -220,20 +263,30 @@ func (s *oauthService) fetchUserInfo(cfg providerConfig, accessToken string) (*m
 	return &models.OAuthProfile{
 		Subject:       info.Sub,
 		Email:         strings.ToLower(email),
-		EmailVerified: cfg.AssumeEmailVerified || isVerified(info.EmailVerified),
+		EmailVerified: cfg.EmailIsTrusted || isVerified(info.EmailVerified),
 		Name:          info.Name,
 	}, nil
 }
 
-// isVerified normalise email_verified : Google l'envoie en booléen, d'autres
-// fournisseurs en chaîne "true".
+// isVerified normalise un claim booléen : Google l'envoie en booléen, d'autres
+// fournisseurs en chaîne "true" ou "1".
 func isVerified(raw any) bool {
 	switch value := raw.(type) {
 	case bool:
 		return value
 	case string:
-		return value == "true"
+		return value == "true" || value == "1"
 	default:
 		return false
 	}
+}
+
+// ProviderTrustsEmail expose, pour les tests et le diagnostic, si un
+// fournisseur est configuré de façon à ce que l'email seul fasse foi.
+func ProviderTrustsEmail(provider string) bool {
+	build, ok := providerCatalog[provider]
+	if !ok {
+		return false
+	}
+	return build().EmailIsTrusted
 }
