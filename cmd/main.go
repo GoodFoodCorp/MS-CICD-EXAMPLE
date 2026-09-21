@@ -66,9 +66,11 @@ func main() {
 						&models.RefreshToken{},
 						&models.PasswordResetToken{},
 						&models.EmailVerificationToken{},
+						&models.OAuthAccount{},
 					); migrateErr != nil {
 						log.Printf("[WARNING] Echec migration DB: %v", migrateErr)
 					} else {
+						dropObsoleteTenantSchema(db)
 						if seedErr := seeder.Seed(db); seedErr != nil {
 							log.Printf("[WARNING] Echec seeder: %v", seedErr)
 						}
@@ -112,9 +114,11 @@ func main() {
 	authService := services.NewAuthService(authRepo, emailService)
 	userAdminService := services.NewUserAdminService(authRepo)
 	roleService := services.NewRoleService(authRepo)
+	oauthService := services.NewOAuthService()
 
 	// Controllers
 	authController := controllers.NewAuthController(authService)
+	oauthController := controllers.NewOAuthController(oauthService, authService)
 	profileController := controllers.NewProfileController()
 	adminController := controllers.NewAdminController(userAdminService)
 	roleController := controllers.NewRoleController(roleService)
@@ -210,6 +214,13 @@ func main() {
 		authGroup.POST("/logout", authController.Logout)
 		authGroup.POST("/forgot-password", authController.ForgotPassword)
 		authGroup.POST("/reset-password", authController.ResetPassword)
+
+		// Connexion via un fournisseur externe (Google, Microsoft).
+		// 'providers' est déclaré avant ':provider' : sinon la route
+		// paramétrée capterait le mot littéral.
+		authGroup.GET("/oauth/providers", oauthController.Providers)
+		authGroup.GET("/oauth/:provider", oauthController.Start)
+		authGroup.GET("/oauth/:provider/callback", oauthController.Callback)
 	}
 
 	protected := r.Group("/api/user")
@@ -281,4 +292,25 @@ func main() {
 	}
 	log.Println("Service Auth PRO démarré sur le port " + port)
 	r.Run(":" + port)
+}
+
+// dropObsoleteTenantSchema supprime les vestiges du modèle Tenant local,
+// retiré du code le jour où franchise-service est devenu propriétaire des
+// restaurants. GORM n'efface jamais une table ni une contrainte : sans ce
+// nettoyage, la clé étrangère continue d'exiger que `users.tenant_id`
+// référence une table morte, ce qui empêche de rattacher un franchisé à un
+// vrai restaurant (son portail reste alors désespérément vide).
+//
+// Idempotent, et sans effet sur une base créée après la migration.
+func dropObsoleteTenantSchema(db *gorm.DB) {
+	statements := []string{
+		"ALTER TABLE users DROP CONSTRAINT IF EXISTS fk_tenants_users",
+		"DROP TABLE IF EXISTS tenants",
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			log.Printf("[WARNING] Nettoyage du schéma tenant obsolète: %v", err)
+			return
+		}
+	}
 }

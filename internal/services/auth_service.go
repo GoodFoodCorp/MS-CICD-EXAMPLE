@@ -24,6 +24,7 @@ type AuthService interface {
 	VerifyEmail(token string) error
 	ForgotPassword(req *models.ForgotPasswordRequest) (string, error)
 	ResetPassword(req *models.ResetPasswordRequest) error
+	LoginWithOAuth(profile *models.OAuthProfile) (string, string, error)
 }
 
 // ─── Implémentation ─────────────────────────────────
