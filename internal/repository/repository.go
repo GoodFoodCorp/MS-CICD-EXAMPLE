@@ -14,11 +14,13 @@ type AuthRepository interface {
 	FindUserByID(userID string) (*models.User, error)
 	FindGlobalByEmail(email string) (*models.User, error)
 	FindAll(page int, limit int) ([]models.User, int64, error)
+	DeleteUser(userID string) error
 
 	// Tokens
 	CreateRefreshToken(token *models.RefreshToken) error
 	GetRefreshToken(token string) (*models.RefreshToken, error)
 	RevokeRefreshToken(token string) error
+	RevokeAllRefreshTokensForUser(userID string) error
 	CreatePasswordResetToken(token *models.PasswordResetToken) error
 	GetPasswordResetToken(token string) (*models.PasswordResetToken, error)
 	MarkPasswordResetTokenAsUsed(token string) error

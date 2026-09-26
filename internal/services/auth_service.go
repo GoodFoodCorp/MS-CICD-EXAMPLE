@@ -24,6 +24,8 @@ type AuthService interface {
 	VerifyEmail(token string) error
 	ForgotPassword(req *models.ForgotPasswordRequest) (string, error)
 	ResetPassword(req *models.ResetPasswordRequest) error
+	ChangePassword(userID string, req *models.ChangePasswordRequest) error
+	DeleteAccount(userID string, req *models.DeleteAccountRequest) error
 }
 
 // ─── Implémentation ─────────────────────────────────
@@ -251,4 +253,50 @@ func (s *authService) ResetPassword(req *models.ResetPasswordRequest) error {
 	s.repo.UpdateUserPassword(pwdResetToken.UserID, string(hashed))
 	s.repo.MarkPasswordResetTokenAsUsed(req.Token)
 	return nil
+}
+
+// ChangePassword lets an authenticated user set a new password, verifying the
+// current one first. All existing sessions are revoked afterwards.
+func (s *authService) ChangePassword(userID string, req *models.ChangePasswordRequest) error {
+	if req.NewPassword != req.ConfirmPassword {
+		return errors.New("les mots de passe ne correspondent pas")
+	}
+	if err := validatePasswordComplex(req.NewPassword); err != nil {
+		return err
+	}
+	user, err := s.repo.FindUserByID(userID)
+	if err != nil {
+		return errors.New("utilisateur introuvable")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.CurrentPassword)); err != nil {
+		return errors.New("mot de passe actuel incorrect")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.NewPassword)); err == nil {
+		return errors.New("vous ne pouvez pas réutiliser votre ancien mot de passe")
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), 12)
+	if err != nil {
+		return err
+	}
+	if err := s.repo.UpdateUserPassword(userID, string(hashed)); err != nil {
+		return err
+	}
+	return s.repo.RevokeAllRefreshTokensForUser(userID)
+}
+
+// DeleteAccount soft-deletes the caller's own account after verifying their
+// password, and revokes every active session.
+func (s *authService) DeleteAccount(userID string, req *models.DeleteAccountRequest) error {
+	user, err := s.repo.FindUserByID(userID)
+	if err != nil {
+		return errors.New("utilisateur introuvable")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
+		return errors.New("mot de passe incorrect")
+	}
+	if err := s.repo.RevokeAllRefreshTokensForUser(userID); err != nil {
+		return err
+	}
+	return s.repo.DeleteUser(userID)
 }
