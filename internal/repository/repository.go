@@ -30,6 +30,10 @@ type AuthRepository interface {
 	DeleteEmailVerificationToken(id uint) error
 	MarkUserAsVerified(userID string) error
 
+	// OAuth
+	FindOAuthAccount(provider, providerUserID string) (*models.OAuthAccount, error)
+	CreateOAuthAccount(account *models.OAuthAccount) error
+
 	// Roles
 	CreateRole(role *models.Role) error
 	FindRoleByName(name string) (*models.Role, error)

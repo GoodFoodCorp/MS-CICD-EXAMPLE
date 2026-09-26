@@ -26,6 +26,7 @@ type AuthService interface {
 	ResetPassword(req *models.ResetPasswordRequest) error
 	ChangePassword(userID string, req *models.ChangePasswordRequest) error
 	DeleteAccount(userID string, req *models.DeleteAccountRequest) error
+	LoginWithOAuth(profile *models.OAuthProfile) (string, string, error)
 }
 
 // ─── Implémentation ─────────────────────────────────
