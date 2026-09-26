@@ -101,6 +101,14 @@ func (m *MockAuthRepository) RevokeRefreshToken(token string) error {
 	return m.Called(token).Error(0)
 }
 
+func (m *MockAuthRepository) RevokeAllRefreshTokensForUser(userID string) error {
+	return m.Called(userID).Error(0)
+}
+
+func (m *MockAuthRepository) DeleteUser(userID string) error {
+	return m.Called(userID).Error(0)
+}
+
 func (m *MockAuthRepository) CreateRole(role *models.Role) error {
 	return m.Called(role).Error(0)
 }
@@ -199,6 +207,14 @@ func (m *MockAuthService) ResetPassword(req *models.ResetPasswordRequest) error 
 	return m.Called(req).Error(0)
 }
 
+func (m *MockAuthService) ChangePassword(userID string, req *models.ChangePasswordRequest) error {
+	return m.Called(userID, req).Error(0)
+}
+
+func (m *MockAuthService) DeleteAccount(userID string, req *models.DeleteAccountRequest) error {
+	return m.Called(userID, req).Error(0)
+}
+
 // ─── UserAdminService Mock (pour AdminController) ───
 
 type MockUserAdminService struct {
@@ -264,4 +280,23 @@ func (m *MockRoleService) GetRoleBySlug(slug string) (*models.Role, error) {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*models.Role), args.Error(1)
+}
+
+// ─── OAuth ──────────────────────────────────────────
+
+func (m *MockAuthRepository) FindOAuthAccount(provider, providerUserID string) (*models.OAuthAccount, error) {
+	args := m.Called(provider, providerUserID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.OAuthAccount), args.Error(1)
+}
+
+func (m *MockAuthRepository) CreateOAuthAccount(account *models.OAuthAccount) error {
+	return m.Called(account).Error(0)
+}
+
+func (m *MockAuthService) LoginWithOAuth(profile *models.OAuthProfile) (string, string, error) {
+	args := m.Called(profile)
+	return args.String(0), args.String(1), args.Error(2)
 }

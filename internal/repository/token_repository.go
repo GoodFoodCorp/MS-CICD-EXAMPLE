@@ -21,6 +21,12 @@ func (r *authRepo) RevokeRefreshToken(token string) error {
 	return r.db.Model(&models.RefreshToken{}).Where("token = ?", token).Update("revoked", true).Error
 }
 
+// RevokeAllRefreshTokensForUser logs the user out everywhere — used after a
+// password change or account deletion.
+func (r *authRepo) RevokeAllRefreshTokensForUser(userID string) error {
+	return r.db.Model(&models.RefreshToken{}).Where("user_id = ? AND revoked = ?", userID, false).Update("revoked", true).Error
+}
+
 // ─── Password Reset Tokens ─────────────────────────
 
 func (r *authRepo) CreatePasswordResetToken(token *models.PasswordResetToken) error {
