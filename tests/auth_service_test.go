@@ -46,6 +46,64 @@ func TestAuthService_PasswordResetFlow(t *testing.T) {
 	})
 }
 
+func TestAuthService_ChangePassword(t *testing.T) {
+	os.Setenv("JWT_SECRET", "test_secret")
+
+	t.Run("wrong current password", func(t *testing.T) {
+		repo := new(MockAuthRepository)
+		srv := services.NewAuthService(repo, new(MockEmailService))
+		oldHash, _ := bcrypt.GenerateFromPassword([]byte("RealPass123"), bcrypt.DefaultCost)
+		repo.On("FindUserByID", "U1").Return(&models.User{ID: "U1", Password: string(oldHash)}, nil).Once()
+
+		err := srv.ChangePassword("U1", &models.ChangePasswordRequest{
+			CurrentPassword: "WrongPass1", NewPassword: "NewPass123", ConfirmPassword: "NewPass123",
+		})
+		assert.ErrorContains(t, err, "mot de passe actuel incorrect")
+	})
+
+	t.Run("success revokes existing sessions", func(t *testing.T) {
+		repo := new(MockAuthRepository)
+		srv := services.NewAuthService(repo, new(MockEmailService))
+		oldHash, _ := bcrypt.GenerateFromPassword([]byte("RealPass123"), bcrypt.DefaultCost)
+		repo.On("FindUserByID", "U1").Return(&models.User{ID: "U1", Password: string(oldHash)}, nil).Once()
+		repo.On("UpdateUserPassword", "U1", mock.Anything).Return(nil).Once()
+		repo.On("RevokeAllRefreshTokensForUser", "U1").Return(nil).Once()
+
+		err := srv.ChangePassword("U1", &models.ChangePasswordRequest{
+			CurrentPassword: "RealPass123", NewPassword: "NewPass456", ConfirmPassword: "NewPass456",
+		})
+		assert.NoError(t, err)
+		repo.AssertExpectations(t)
+	})
+}
+
+func TestAuthService_DeleteAccount(t *testing.T) {
+	os.Setenv("JWT_SECRET", "test_secret")
+
+	t.Run("wrong password", func(t *testing.T) {
+		repo := new(MockAuthRepository)
+		srv := services.NewAuthService(repo, new(MockEmailService))
+		hash, _ := bcrypt.GenerateFromPassword([]byte("RealPass123"), bcrypt.DefaultCost)
+		repo.On("FindUserByID", "U1").Return(&models.User{ID: "U1", Password: string(hash)}, nil).Once()
+
+		err := srv.DeleteAccount("U1", &models.DeleteAccountRequest{Password: "WrongPass"})
+		assert.ErrorContains(t, err, "mot de passe incorrect")
+	})
+
+	t.Run("success revokes sessions then deletes", func(t *testing.T) {
+		repo := new(MockAuthRepository)
+		srv := services.NewAuthService(repo, new(MockEmailService))
+		hash, _ := bcrypt.GenerateFromPassword([]byte("RealPass123"), bcrypt.DefaultCost)
+		repo.On("FindUserByID", "U1").Return(&models.User{ID: "U1", Password: string(hash)}, nil).Once()
+		repo.On("RevokeAllRefreshTokensForUser", "U1").Return(nil).Once()
+		repo.On("DeleteUser", "U1").Return(nil).Once()
+
+		err := srv.DeleteAccount("U1", &models.DeleteAccountRequest{Password: "RealPass123"})
+		assert.NoError(t, err)
+		repo.AssertExpectations(t)
+	})
+}
+
 func TestAuthService_VerifyEmail(t *testing.T) {
 	os.Setenv("JWT_SECRET", "test_secret")
 	repo := new(MockAuthRepository)

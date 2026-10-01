@@ -196,7 +196,11 @@ func seedUsers(db *gorm.DB, restaurants map[string]services.Restaurant, roles ma
 				IsEmailVerified: true,
 			}
 			if err := db.Create(&user).Error; err != nil {
-				return err
+				// Un compte de démo en échec ne doit pas emporter les suivants :
+				// sinon une seule anomalie prive la plateforme de tous les
+				// comptes restants de la liste.
+				log.Printf("  [WARNING] %s '%s' non créé : %v\n", su.Label, email, err)
+				continue
 			}
 
 			// Assigner le rôle
@@ -214,9 +218,90 @@ func seedUsers(db *gorm.DB, restaurants map[string]services.Restaurant, roles ma
 		} else if result.Error != nil {
 			return result.Error
 		} else {
-			log.Printf("  • %s '%s' existe déjà\n", su.Label, email)
+			// Le compte existe : son rôle n'est pas forcément celui attendu (base
+			// seedée par une version antérieure). Sans cette réconciliation, un
+			// admin de démo portant un autre slug se voit refuser tous les
+			// endpoints `admin` de la plateforme.
+			assigned, err := ensureRole(db, &user, roles, su.RoleSlug)
+			if err != nil {
+				return err
+			}
+
+			relinked, err := ensureTenant(db, &user, restaurants, su.TenantID)
+			if err != nil {
+				// Typiquement une contrainte héritée de l'ancien modèle Tenant
+				// local : on le signale sans bloquer le reste du seeding.
+				log.Printf("  [WARNING] %s '%s' : restaurant non re-rattaché : %v\n", su.Label, email, err)
+				relinked = false
+			}
+
+			switch {
+			case assigned && relinked:
+				log.Printf("  ✓ %s '%s' existait déjà — rôle '%s' ajouté et restaurant re-rattaché\n", su.Label, email, su.RoleSlug)
+			case assigned:
+				log.Printf("  ✓ %s '%s' existait déjà — rôle '%s' ajouté\n", su.Label, email, su.RoleSlug)
+			case relinked:
+				log.Printf("  ✓ %s '%s' existait déjà — restaurant re-rattaché\n", su.Label, email)
+			default:
+				log.Printf("  • %s '%s' existe déjà\n", su.Label, email)
+			}
 		}
 	}
 
 	return nil
+}
+
+// ensureRole rattache le rôle attendu à un compte existant s'il ne l'a pas
+// déjà. Les autres rôles sont conservés : on complète, on ne remplace pas.
+func ensureRole(db *gorm.DB, user *models.User, roles map[string]*models.Role, slug string) (bool, error) {
+	role, ok := roles[slug]
+	if !ok {
+		return false, nil
+	}
+
+	var count int64
+	if err := db.Model(&models.UserRole{}).
+		Where("user_id = ? AND role_id = ?", user.ID, role.ID).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return false, nil
+	}
+
+	if err := db.Create(&models.UserRole{UserID: user.ID, RoleID: role.ID}).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// ensureTenant répare un rattachement devenu invalide : si le restaurant
+// référencé n'existe plus côté franchise-service (base recréée, identifiants
+// régénérés), le franchisé se retrouve avec un portail vide — menus, stocks et
+// commandes sont tous filtrés sur un tenant fantôme.
+//
+// Un rattachement encore valide n'est jamais écrasé : il a pu être choisi
+// délibérément. Et si franchise-service n'a pas répondu, on ne touche à rien,
+// faute de savoir ce qui est valide.
+func ensureTenant(db *gorm.DB, user *models.User, restaurants map[string]services.Restaurant, expected *string) (bool, error) {
+	if expected == nil || len(restaurants) == 0 {
+		return false, nil
+	}
+
+	known := make(map[string]bool, len(restaurants))
+	for _, restaurant := range restaurants {
+		known[restaurant.ID] = true
+	}
+
+	if user.TenantID != nil && known[*user.TenantID] {
+		return false, nil // rattachement valide : on n'y touche pas
+	}
+	if user.TenantID != nil && *user.TenantID == *expected {
+		return false, nil
+	}
+
+	if err := db.Model(user).Update("tenant_id", *expected).Error; err != nil {
+		return false, err
+	}
+	return true, nil
 }

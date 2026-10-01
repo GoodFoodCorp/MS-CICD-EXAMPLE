@@ -58,6 +58,38 @@ ensuite.
 - Hachage bcrypt (coût 12)
 - **Rate limiting** sur les routes d'authentification
 
+### Connexion via un fournisseur externe (Google, Microsoft)
+
+Flux OAuth2 / OIDC standard (code d'autorisation). Le fournisseur authentifie
+l'utilisateur ; ce service émet ensuite **ses propres jetons** — le reste de la
+plateforme ne connaît que le JWT Good Food.
+
+- **Activation par configuration** : un fournisseur n'apparaît dans
+  `/api/auth/oauth/providers` (et donc comme bouton dans le front) que si ses
+  identifiants sont renseignés. Aucun bouton ne mène jamais à une impasse.
+- **Protection CSRF** : un `state` aléatoire est déposé en cookie `HttpOnly`
+  puis rejoué au retour ; un `state` absent ou falsifié fait échouer la connexion.
+- **Jetons transmis dans le fragment d'URL** (`#access_token=…`) et non en query :
+  un fragment n'est jamais envoyé au serveur, donc jamais écrit dans ses logs.
+- **Rattachement de compte** : si l'email existe déjà localement, le compte
+  externe y est lié — **uniquement si le fournisseur certifie l'email**. Sans
+  cette garantie, la connexion est refusée plutôt que de risquer la prise de
+  contrôle d'un compte existant.
+- **Cas Microsoft (attaque « nOAuth »)** : sur le endpoint multi-tenant
+  (`common`), l'email renvoyé **ne prouve rien**. N'importe qui peut créer un
+  tenant Entra gratuit et y déclarer l'adresse d'un de vos utilisateurs sur un
+  domaine non vérifié. Par défaut, une connexion Microsoft ne peut donc
+  **jamais** rejoindre un compte existant. Deux réglages lèvent la restriction :
+  renseigner `MICROSOFT_TENANT_ID` (l'annuaire de votre tenant fait alors
+  autorité), ou activer le claim optionnel **`xms_edov`** dans l'inscription
+  d'application — la mitigation officielle de Microsoft, que ce service lit
+  automatiquement dans le jeton d'identité.
+- **Premier accès** : création d'un compte client vérifié, sans mot de passe
+  utilisable (un secret aléatoire satisfait la contrainte, personne ne le connaît).
+
+Variables : `GOOGLE_CLIENT_ID/SECRET`, `MICROSOFT_CLIENT_ID/SECRET`,
+`OAUTH_REDIRECT_BASE_URL`, `FRONTEND_URL` (voir `.env.example`).
+
 ### Rôles et administration
 
 - Création de rôles, attribution et retrait à un utilisateur
@@ -82,6 +114,18 @@ ensuite.
 | `user`                   | `user@example.com`     | `User1234!`   |
 | `livreur`                | `livreur@example.com`  | `Livreur123!` |
 
+Le seeder **réconcilie aussi les comptes déjà présents** : il ajoute le rôle
+attendu s'il manque et re-rattache un franchisé dont le restaurant n'existe plus
+côté franchise-service. Sans cela, une base seedée par une version antérieure
+laissait l'admin sans droits `admin` et le franchisé sur un restaurant fantôme
+(portail vide). Un rattachement encore valide n'est jamais écrasé, et l'échec
+d'un compte n'interrompt plus la création des suivants.
+
+Au démarrage, les vestiges de l'ancien modèle `Tenant` local (table et clé
+étrangère, antérieurs à la reprise des restaurants par franchise-service) sont
+supprimés s'ils existent encore — GORM ne le fait jamais de lui-même, et cette
+contrainte empêchait tout rattachement aux vrais restaurants.
+
 ---
 
 ## Endpoints
@@ -95,6 +139,9 @@ ensuite.
 | GET      | `/api/auth/verify-email`                                                | public (lien email)                |
 | POST     | `/api/auth/forgot-password`                                             | public                             |
 | POST     | `/api/auth/reset-password`                                              | public (jeton)                     |
+| GET      | `/api/auth/oauth/providers`                                             | public                             |
+| GET      | `/api/auth/oauth/:provider`                                             | public (redirection fournisseur)   |
+| GET      | `/api/auth/oauth/:provider/callback`                                    | public (retour fournisseur)        |
 | GET      | `/api/user/me`                                                          | authentifié                        |
 | GET      | `/api/admin/users`, `/users/:id`, `/search`                             | `admin`                            |
 | POST     | `/api/admin/promote`                                                    | `admin`                            |
