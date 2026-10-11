@@ -223,6 +223,12 @@ func main() {
 		authGroup.GET("/oauth/:provider/callback", oauthController.Callback)
 	}
 
+	protectedAuth := r.Group("/api/auth")
+	protectedAuth.Use(middleware.AuthMiddleware())
+	protectedAuth.POST("/upgrade-to-delivery", authController.UpgradeToDelivery)
+	protectedAuth.POST("/change-password", authController.ChangePassword)
+	protectedAuth.DELETE("/account", authController.DeleteAccount)
+
 	protected := r.Group("/api/user")
 	protected.Use(middleware.AuthMiddleware())
 	{

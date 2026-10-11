@@ -13,6 +13,61 @@ type AuthController struct {
 	service services.AuthService
 }
 
+func (ctrl *AuthController) UpgradeToDelivery(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Utilisateur non authentifié"})
+		return
+	}
+	service, ok := ctrl.service.(interface{ UpgradeToDelivery(string) error })
+	if !ok {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "Fonction indisponible"})
+		return
+	}
+	if err := service.UpgradeToDelivery(userID.(string)); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Compte livreur activé"})
+}
+
+func (ctrl *AuthController) ChangePassword(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Utilisateur non authentifié"})
+		return
+	}
+	var body struct {
+		CurrentPassword string `json:"current_password" binding:"required"`
+		NewPassword     string `json:"new_password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Les deux mots de passe sont obligatoires"})
+		return
+	}
+	service, ok := ctrl.service.(interface {
+		ChangePassword(string, string, string) error
+	})
+	if !ok {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "Fonction indisponible"})
+		return
+	}
+	if err := service.ChangePassword(userID.(string), body.CurrentPassword, body.NewPassword); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Mot de passe modifié"})
+}
+
+func (ctrl *AuthController) DeleteAccount(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists { c.JSON(http.StatusUnauthorized, gin.H{"error": "Utilisateur non authentifié"}); return }
+	service, ok := ctrl.service.(interface{ DeleteAccount(string) error })
+	if !ok { c.JSON(http.StatusNotImplemented, gin.H{"error": "Fonction indisponible"}); return }
+	if err := service.DeleteAccount(userID.(string)); err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()}); return }
+	c.JSON(http.StatusOK, gin.H{"message": "Compte supprimé"})
+}
+
 func NewAuthController(service services.AuthService) *AuthController {
 	return &AuthController{service: service}
 }

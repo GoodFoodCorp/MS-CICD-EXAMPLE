@@ -49,6 +49,15 @@ type authRepo struct {
 	db *gorm.DB
 }
 
+func (r *authRepo) DeleteUser(userID string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ?", userID).Delete(&models.UserRole{}).Error; err != nil { return err }
+		if err := tx.Where("user_id = ?", userID).Delete(&models.RefreshToken{}).Error; err != nil { return err }
+		if err := tx.Where("id = ?", userID).Delete(&models.User{}).Error; err != nil { return err }
+		return nil
+	})
+}
+
 func NewAuthRepository(db *gorm.DB) AuthRepository {
 	return &authRepo{db: db}
 }

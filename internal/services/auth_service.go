@@ -256,6 +256,14 @@ func (s *authService) ResetPassword(req *models.ResetPasswordRequest) error {
 	return nil
 }
 
+func (s *authService) UpgradeToDelivery(userID string) error {
+	role, err := s.repo.FindRoleBySlug("livreur")
+	if err != nil {
+		return errors.New("rôle livreur introuvable")
+	}
+	return s.repo.AssignRoleToUser(userID, role.ID)
+}
+
 // ChangePassword lets an authenticated user set a new password, verifying the
 // current one first. All existing sessions are revoked afterwards.
 func (s *authService) ChangePassword(userID string, req *models.ChangePasswordRequest) error {
