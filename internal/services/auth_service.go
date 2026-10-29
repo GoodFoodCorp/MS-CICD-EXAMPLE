@@ -3,6 +3,7 @@ package services
 import (
 	"auth-service/internal/models"
 	"auth-service/internal/repository"
+	"auth-service/internal/tokens"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -10,7 +11,6 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -61,9 +61,13 @@ func generateTokenString() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
+// generateTokens issues a fresh access/refresh pair and stores the refresh
+// token's hash so it can be rotated and revoked.
 func (s *authService) generateTokens(user *models.User) (string, string, error) {
-	secret := []byte(os.Getenv("JWT_SECRET"))
-	// Récupère les rôles de l'utilisateur
+	cfg, err := tokens.FromEnv()
+	if err != nil {
+		return "", "", err
+	}
 	roles, _ := s.repo.GetUserRoles(user.ID)
 	roleNames := make([]string, len(roles))
 	roleSlugs := make([]string, len(roles))
@@ -71,32 +75,28 @@ func (s *authService) generateTokens(user *models.User) (string, string, error) 
 		roleNames[i] = r.Name
 		roleSlugs[i] = r.Slug
 	}
-	accessClaims := jwt.MapClaims{
-		"sub":        user.ID,
+	tenantID := ""
+	if user.TenantID != nil {
+		tenantID = *user.TenantID
+	}
+	now := time.Now()
+	accessToken, err := cfg.IssueAccess(user.ID, map[string]any{
 		"email":      user.Email,
 		"roles":      roleNames,
 		"role_slugs": roleSlugs,
-		"exp":        time.Now().Add(15 * time.Minute).Unix(),
-	}
-	// Si tenant_id est nil, on met une string vide dans le JWT
-	if user.TenantID != nil {
-		accessClaims["tenant_id"] = *user.TenantID
-	} else {
-		accessClaims["tenant_id"] = ""
-	}
-	accessToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims).SignedString(secret)
+		"tenant_id":  tenantID,
+	}, now)
 	if err != nil {
 		return "", "", err
 	}
-
-	refreshClaims := jwt.MapClaims{"sub": user.ID, "exp": time.Now().Add(7 * 24 * time.Hour).Unix()}
-	refreshToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims).SignedString(secret)
+	refreshToken, err := cfg.IssueRefresh(user.ID, now)
 	if err != nil {
 		return "", "", err
 	}
-
-	rtModel := &models.RefreshToken{UserID: user.ID, Token: refreshToken, ExpiresAt: time.Now().Add(7 * 24 * time.Hour)}
-	s.repo.CreateRefreshToken(rtModel)
+	stored := &models.RefreshToken{UserID: user.ID, Token: tokens.Hash(refreshToken), ExpiresAt: now.Add(tokens.RefreshTTL)}
+	if err := s.repo.CreateRefreshToken(stored); err != nil {
+		return "", "", err
+	}
 	return accessToken, refreshToken, nil
 }
 
@@ -180,19 +180,33 @@ func (s *authService) LoginUser(req *models.LoginRequest) (string, string, error
 }
 
 func (s *authService) LogoutUser(refreshToken string) error {
-	return s.repo.RevokeRefreshToken(refreshToken)
+	return s.repo.RevokeRefreshToken(tokens.Hash(refreshToken))
 }
 
+// RefreshAccessToken rotates a refresh token: the presented one must be a
+// genuine, unexpired, unrevoked refresh token (an access token is refused), and
+// it is revoked before a new pair is issued.
 func (s *authService) RefreshAccessToken(oldRefreshToken string) (string, string, error) {
-	storedToken, err := s.repo.GetRefreshToken(oldRefreshToken)
+	cfg, err := tokens.FromEnv()
 	if err != nil {
+		return "", "", err
+	}
+	subject, err := cfg.ParseRefresh(oldRefreshToken)
+	if err != nil {
+		return "", "", errors.New("session expirée")
+	}
+	hash := tokens.Hash(oldRefreshToken)
+	storedToken, err := s.repo.GetRefreshToken(hash)
+	if err != nil || storedToken.UserID != subject {
 		return "", "", errors.New("session expirée")
 	}
 	user, err := s.repo.FindUserByID(storedToken.UserID)
 	if err != nil {
 		return "", "", errors.New("user introuvable")
 	}
-	s.repo.RevokeRefreshToken(oldRefreshToken)
+	if err := s.repo.RevokeRefreshToken(hash); err != nil {
+		return "", "", err
+	}
 	return s.generateTokens(user)
 }
 

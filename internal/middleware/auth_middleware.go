@@ -1,13 +1,12 @@
 package middleware
 
 import (
-	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
+	"auth-service/internal/tokens"
+
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 func AuthMiddleware() gin.HandlerFunc {
@@ -26,30 +25,23 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("méthode de signature inattendue: %v", token.Header["alg"])
-			}
-			return []byte(os.Getenv("JWT_SECRET")), nil
-		})
-
-		if err != nil || token == nil {
+		cfg, err := tokens.FromEnv()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Configuration JWT absente"})
+			c.Abort()
+			return
+		}
+		claims, err := cfg.ParseAccess(tokenString)
+		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token invalide ou expiré"})
 			c.Abort()
 			return
 		}
-
-		if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-			c.Set("userID", claims["sub"])
-			c.Set("email", claims["email"])
-			c.Set("tenantID", claims["tenant_id"])
-			c.Set("roles", claims["roles"])
-
-			c.Next()
-		} else {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token invalide ou expiré"})
-			c.Abort()
-		}
+		c.Set("userID", claims["sub"])
+		c.Set("email", claims["email"])
+		c.Set("tenantID", claims["tenant_id"])
+		c.Set("roles", claims["roles"])
+		c.Next()
 	}
 }
 
