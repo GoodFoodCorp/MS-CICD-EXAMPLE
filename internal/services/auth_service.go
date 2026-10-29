@@ -322,5 +322,10 @@ func (s *authService) DeleteAccount(userID string, req *models.DeleteAccountRequ
 	if err := s.repo.RevokeAllRefreshTokensForUser(userID); err != nil {
 		return err
 	}
-	return s.repo.DeleteUser(userID)
+	if err := s.repo.DeleteUser(userID); err != nil {
+		return err
+	}
+	// Right to erasure: the personal data held by user-service goes too.
+	go NotifyUserServiceErasure(userID)
+	return nil
 }
