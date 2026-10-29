@@ -215,6 +215,10 @@ func (m *MockAuthService) DeleteAccount(userID string, req *models.DeleteAccount
 	return m.Called(userID, req).Error(0)
 }
 
+func (m *MockAuthService) UpgradeToDelivery(userID string) error {
+	return m.Called(userID).Error(0)
+}
+
 // ─── UserAdminService Mock (pour AdminController) ───
 
 type MockUserAdminService struct {

@@ -13,58 +13,51 @@ type AuthController struct {
 	service services.AuthService
 }
 
+// UpgradeToDelivery grants the courier role to the authenticated user (mobile
+// courier sign-up).
 func (ctrl *AuthController) UpgradeToDelivery(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Utilisateur non authentifié"})
-		return
-	}
-	service, ok := ctrl.service.(interface{ UpgradeToDelivery(string) error })
-	if !ok {
-		c.JSON(http.StatusNotImplemented, gin.H{"error": "Fonction indisponible"})
-		return
-	}
-	if err := service.UpgradeToDelivery(userID.(string)); err != nil {
+	if err := ctrl.service.UpgradeToDelivery(c.GetString("userID")); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Compte livreur activé"})
 }
 
+// ChangePassword is the mobile flavour of PUT /api/user/me/password: the app
+// does not send a confirmation field, so the new password confirms itself.
 func (ctrl *AuthController) ChangePassword(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Utilisateur non authentifié"})
-		return
-	}
 	var body struct {
 		CurrentPassword string `json:"current_password" binding:"required"`
-		NewPassword     string `json:"new_password" binding:"required"`
+		NewPassword     string `json:"new_password" binding:"required,min=8"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Les deux mots de passe sont obligatoires"})
 		return
 	}
-	service, ok := ctrl.service.(interface {
-		ChangePassword(string, string, string) error
-	})
-	if !ok {
-		c.JSON(http.StatusNotImplemented, gin.H{"error": "Fonction indisponible"})
-		return
+	req := &models.ChangePasswordRequest{
+		CurrentPassword: body.CurrentPassword,
+		NewPassword:     body.NewPassword,
+		ConfirmPassword: body.NewPassword,
 	}
-	if err := service.ChangePassword(userID.(string), body.CurrentPassword, body.NewPassword); err != nil {
+	if err := ctrl.service.ChangePassword(c.GetString("userID"), req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Mot de passe modifié"})
 }
 
+// DeleteAccount deletes the caller's account. The password is required: a
+// stolen session alone must never be enough to destroy an account.
 func (ctrl *AuthController) DeleteAccount(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists { c.JSON(http.StatusUnauthorized, gin.H{"error": "Utilisateur non authentifié"}); return }
-	service, ok := ctrl.service.(interface{ DeleteAccount(string) error })
-	if !ok { c.JSON(http.StatusNotImplemented, gin.H{"error": "Fonction indisponible"}); return }
-	if err := service.DeleteAccount(userID.(string)); err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()}); return }
+	var req models.DeleteAccountRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Le mot de passe est obligatoire"})
+		return
+	}
+	if err := ctrl.service.DeleteAccount(c.GetString("userID"), &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "Compte supprimé"})
 }
 
