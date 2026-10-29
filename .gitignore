@@ -32,3 +32,6 @@ ssh_key*
 
 # Generated reports
 coverage.html
+
+# Compiled service binary
+/auth-service

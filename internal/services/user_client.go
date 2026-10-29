@@ -16,11 +16,18 @@ var userHTTPClient = &http.Client{Timeout: 5 * time.Second}
 func NotifyUserServiceProfileCreation(userID string) {
 	baseURL := os.Getenv("USER_SERVICE_URL")
 	if baseURL == "" {
-		baseURL = "http://user-service:8082"
+		baseURL = "http://user-service:8087"
 	}
 
 	body, _ := json.Marshal(map[string]string{"user_id": userID})
-	resp, err := userHTTPClient.Post(baseURL+"/internal/profiles", "application/json", bytes.NewBuffer(body))
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/internal/profiles", bytes.NewBuffer(body))
+	if err != nil {
+		log.Printf("[WARN] Requête user-service invalide: %v", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Service-Key", os.Getenv("SERVICE_API_KEY"))
+	resp, err := userHTTPClient.Do(req)
 	if err != nil {
 		log.Printf("[WARN] Impossible de créer le profil dans user-service: %v", err)
 		return
