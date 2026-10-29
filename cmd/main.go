@@ -130,6 +130,11 @@ func main() {
 	roleController := controllers.NewRoleController(roleService)
 
 	r := gin.Default()
+	// The client IP (rate limiting, logs) may only come from X-Forwarded-For
+	// when the request was relayed by the ingress, never from the client itself.
+	if err := r.SetTrustedProxies(middleware.TrustedProxies()); err != nil {
+		log.Fatalf("TRUSTED_PROXIES invalide: %v", err)
+	}
 
 	// Swagger / Scalar documentation
 	r.GET("/api-docs/swagger.json", func(c *gin.Context) {
@@ -243,8 +248,9 @@ func main() {
 		protected.DELETE("/me", profileController.DeleteAccount)
 	}
 
-	// ── Endpoints internes (service-to-service, pas de JWT) ──
+	// ── Endpoints internes (service-to-service, clé X-Service-Key) ──
 	internalGroup := r.Group("/internal")
+	internalGroup.Use(middleware.RequireServiceKey())
 	{
 		internalGroup.GET("/users", func(c *gin.Context) {
 			page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))

@@ -4,7 +4,6 @@ import (
 	"auth-service/internal/models"
 	"auth-service/internal/services"
 	"net/http"
-	"os"
 
 	"github.com/gin-gonic/gin"
 )
@@ -133,9 +132,7 @@ func (ctrl *AuthController) Login(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
-	isSecure := os.Getenv("ENV") == "production"
-	c.SetCookie("auth_token", accessToken, 900, "/", "", isSecure, true)
-	c.SetCookie("refresh_token", refreshToken, 604800, "/api/auth/refresh", "", isSecure, true)
+	setSessionCookies(c, accessToken, refreshToken)
 	// Tokens also returned in the body so non-browser clients (mobile app,
 	// WebSocket handshake) can use the Authorization: Bearer scheme.
 	c.JSON(http.StatusOK, gin.H{
@@ -174,9 +171,7 @@ func (ctrl *AuthController) Refresh(c *gin.Context) {
 		c.JSON(401, gin.H{"error": "Expired"})
 		return
 	}
-	isSecure := os.Getenv("ENV") == "production"
-	c.SetCookie("auth_token", newA, 900, "/", "", isSecure, true)
-	c.SetCookie("refresh_token", newR, 604800, "/api/auth/refresh", "", isSecure, true)
+	setSessionCookies(c, newA, newR)
 	c.JSON(200, gin.H{
 		"message":       "Refreshed",
 		"access_token":  newA,
@@ -206,8 +201,7 @@ func (ctrl *AuthController) Logout(c *gin.Context) {
 	if rt != "" {
 		ctrl.service.LogoutUser(rt)
 	}
-	c.SetCookie("auth_token", "", -1, "/", "", false, true)
-	c.SetCookie("refresh_token", "", -1, "/api/auth/refresh", "", false, true)
+	clearSessionCookies(c)
 	c.JSON(200, gin.H{"message": "Logged out"})
 }
 
@@ -226,12 +220,11 @@ func (ctrl *AuthController) ForgotPassword(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	token, err := ctrl.service.ForgotPassword(&req)
-	if err != nil {
+	if _, err := ctrl.service.ForgotPassword(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(200, gin.H{"message": "Email envoyé", "dev_token": token})
+	c.JSON(200, gin.H{"message": "Email envoyé"})
 }
 
 // @Summary      Reset password
@@ -259,9 +252,7 @@ func (ctrl *AuthController) ResetPassword(c *gin.Context) {
 		ctrl.service.LogoutUser(rt)
 	}
 
-	isSecure := os.Getenv("ENV") == "production"
-	c.SetCookie("auth_token", "", -1, "/", "", isSecure, true)
-	c.SetCookie("refresh_token", "", -1, "/api/auth/refresh", "", isSecure, true)
+	clearSessionCookies(c)
 
 	c.JSON(200, gin.H{"message": "Votre mot de passe a été réinitialisé avec succès."})
 }

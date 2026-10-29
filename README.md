@@ -146,7 +146,7 @@ contrainte empêchait tout rattachement aux vrais restaurants.
 | GET      | `/api/admin/users`, `/users/:id`, `/search`                             | `admin`                            |
 | POST     | `/api/admin/promote`                                                    | `admin`                            |
 | POST/GET | `/api/admin/roles`, `/roles/assign`, `/roles/remove`, `/roles/user/:id` | `admin`                            |
-| GET      | `/internal/users`                                                       | interne (service à service)        |
+| GET      | `/internal/users`                                                       | interne, en-tête `X-Service-Key`   |
 | GET      | `/health`, `/health/db`, `/version`                                     | public                             |
 
 > ⚠️ Ce service expose **`/health`** (et non `/healthz` comme les autres services)
@@ -234,7 +234,11 @@ docker compose up -d --build
 | `JWT_ISSUER`            | non        | Claim `iss` (défaut `goodfood-auth`)                                           |
 | `JWT_AUDIENCE`          | non        | Claim `aud` (défaut `goodfood-api`)                                            |
 | `FRANCHISE_SERVICE_URL` | non        | Défaut `http://franchise-service:8089`                                         |
-| `USER_SERVICE_URL`      | non        | Création du profil à l'inscription                                             |
+| `USER_SERVICE_URL`      | non        | Création du profil à l'inscription (défaut `http://user-service:8087`)         |
+| `SERVICE_API_KEY`       | oui        | Clé `X-Service-Key` exigée sur `/internal/*` et envoyée à `user-service`       |
+| `REDIS_URL`             | non        | Rate limit partagé entre réplicas (sinon en mémoire, par instance)             |
+| `TRUSTED_PROXIES`       | non        | CIDR autorisés à fournir `X-Forwarded-For` (défaut : réseaux privés)           |
+| `COOKIE_SECURE`         | non        | Force le flag `Secure` (défaut : `ENV=production` ou front en https)           |
 | `AUTO_VERIFY_EMAIL`     | non        | `true` en dev : compte vérifié d'office (pas de SMTP)                          |
 | `FRONTEND_URL`          | non        | URL front utilisée dans les liens d'email (vérification et reset mot de passe) |
 | `SMTP_*`                | non        | Envoi des emails de vérification et de réinitialisation                        |

@@ -292,7 +292,8 @@ func TestAuthController_ForgotPassword_Success(t *testing.T) {
 
 	router.ServeHTTP(w, httpReq)
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "dev_tok")
+	// The reset token only ever travels by email, never in the response.
+	assert.NotContains(t, w.Body.String(), "dev_tok")
 }
 
 func TestAuthController_ForgotPassword_BadJSON(t *testing.T) {
