@@ -169,6 +169,24 @@ contrainte empêchait tout rattachement aux vrais restaurants.
 
 Signature **HS256** avec `JWT_SECRET`, partagé avec tous les services.
 
+### Access token vs refresh token
+
+| | Access token | Refresh token |
+|---|---|---|
+| `typ` | `access` | `refresh` |
+| Durée | 15 min | 7 jours |
+| Clé de signature | `JWT_SECRET` | `JWT_REFRESH_SECRET` (dérivée de `JWT_SECRET` si vide) |
+| Accepté par | tous les services | **uniquement** `POST /api/auth/refresh` |
+
+Les deux portent `iss` (`JWT_ISSUER`, défaut `goodfood-auth`), `aud`
+(`JWT_AUDIENCE`, défaut `goodfood-api`), `iat`, `exp` et un `jti` unique. Un
+refresh token étant signé avec une autre clé, aucun service ne peut l'accepter
+comme access token. Le refresh token est **tourné** à chaque usage et seul son
+**hash SHA-256** est stocké en base.
+
+> ⚠️ Migration : les refresh tokens émis avant cette version étaient stockés en
+> clair et ne sont plus reconnus — les utilisateurs se reconnectent une fois.
+
 ---
 
 ## Dépendances
@@ -211,7 +229,10 @@ docker compose up -d --build
 | ----------------------- | ---------- | ------------------------------------------------------------------------------ |
 | `PORT`                  | non (8081) | Port HTTP                                                                      |
 | `DATABASE_URL`          | oui        | Chaîne GORM/Postgres                                                           |
-| `JWT_SECRET`            | oui        | Secret HS256 **partagé par tous les services**                                 |
+| `JWT_SECRET`            | oui        | Secret HS256 des access tokens, **partagé par tous les services**              |
+| `JWT_REFRESH_SECRET`    | non        | Secret des refresh tokens (jamais partagé) — dérivé de `JWT_SECRET` si vide    |
+| `JWT_ISSUER`            | non        | Claim `iss` (défaut `goodfood-auth`)                                           |
+| `JWT_AUDIENCE`          | non        | Claim `aud` (défaut `goodfood-api`)                                            |
 | `FRANCHISE_SERVICE_URL` | non        | Défaut `http://franchise-service:8089`                                         |
 | `USER_SERVICE_URL`      | non        | Création du profil à l'inscription                                             |
 | `AUTO_VERIFY_EMAIL`     | non        | `true` en dev : compte vérifié d'office (pas de SMTP)                          |

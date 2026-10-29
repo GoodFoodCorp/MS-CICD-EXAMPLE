@@ -2,6 +2,7 @@ package tests
 
 import (
 	"auth-service/internal/middleware"
+	"auth-service/internal/tokens"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,16 +14,11 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-/* Helper pour générer un token valide pour les tests */
+/* Helper pour générer un access token valide pour les tests */
 func generateTestToken(secret string, userID string, roles []string) string {
-	claims := jwt.MapClaims{
-		"sub":       userID,
-		"tenant_id": "T1",
-		"roles":     roles,
-		"exp":       time.Now().Add(time.Hour).Unix(),
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	str, _ := token.SignedString([]byte(secret))
+	cfg := tokens.Config{AccessSecret: []byte(secret), RefreshSecret: []byte("refresh-" + secret),
+		Issuer: tokens.DefaultIssuer, Audience: tokens.DefaultAudience}
+	str, _ := cfg.IssueAccess(userID, map[string]any{"tenant_id": "T1", "roles": roles}, time.Now())
 	return str
 }
 
@@ -53,6 +49,32 @@ func TestAuthMiddleware(t *testing.T) {
 
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 		assert.Contains(t, w.Body.String(), "Token invalide")
+	})
+
+	t.Run("Refresh_Token_Rejected", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		refresh, _ := tokens.MustFromEnv().IssueRefresh("User123", time.Now())
+		c.Request, _ = http.NewRequest("GET", "/", nil)
+		c.Request.AddCookie(&http.Cookie{Name: "auth_token", Value: refresh})
+
+		middleware.AuthMiddleware()(c)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	})
+
+	t.Run("Legacy_Token_Without_Type_Rejected", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		legacy, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+			"sub": "User123", "exp": time.Now().Add(time.Hour).Unix(),
+		}).SignedString([]byte("test_secret_key"))
+		c.Request, _ = http.NewRequest("GET", "/", nil)
+		c.Request.Header.Set("Authorization", "Bearer "+legacy)
+
+		middleware.AuthMiddleware()(c)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
 	})
 
 	t.Run("Valid_Token_Success", func(t *testing.T) {

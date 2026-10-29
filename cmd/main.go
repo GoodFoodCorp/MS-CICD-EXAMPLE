@@ -8,6 +8,7 @@ import (
 	"auth-service/internal/repository"
 	"auth-service/internal/seeder"
 	"auth-service/internal/services"
+	"auth-service/internal/tokens"
 	"log"
 	"net/http"
 	"os"
@@ -37,6 +38,11 @@ import (
 func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("Info: Pas de fichier .env trouvé, lecture des vars système")
+	}
+
+	// Fail fast: without signing material no request can ever be authenticated.
+	if _, err := tokens.FromEnv(); err != nil {
+		log.Fatalf("configuration JWT invalide: %v", err)
 	}
 
 	dsn := os.Getenv("DATABASE_URL")
