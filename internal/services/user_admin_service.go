@@ -19,12 +19,6 @@ var (
 	maxUsersPerPage     = 100
 	assignableRoleSlugs = map[string]bool{"user": true, "manager": true, "livreur": true, "admin": true}
 )
-	ErrManagerNeedsShop  = errors.New("un gérant doit être rattaché à un restaurant")
-	ErrSelfDemotion      = errors.New("vous ne pouvez pas retirer vos propres droits d'administrateur")
-	ErrUserNotFound      = errors.New("utilisateur introuvable")
-	maxUsersPerPage      = 100
-	assignableRoleSlugs  = map[string]bool{"user": true, "manager": true, "livreur": true, "admin": true}
-)
 
 type UserAdminService interface {
 	// GetAllUsers lists users newest first; search filters on the email.
