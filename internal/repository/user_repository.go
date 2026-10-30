@@ -1,19 +1,26 @@
 package repository
 
-import "auth-service/internal/models"
+import (
+	"strings"
+
+	"auth-service/internal/models"
+)
 
 func (r *authRepo) CreateUser(user *models.User) error {
 	return r.db.Create(user).Error
 }
 
-func (r *authRepo) FindAll(page int, limit int) ([]models.User, int64, error) {
+func (r *authRepo) FindAll(page int, limit int, search string) ([]models.User, int64, error) {
 	var users []models.User
 	var total int64
-	offset := (page - 1) * limit
-	if err := r.db.Model(&models.User{}).Count(&total).Error; err != nil {
+	query := r.db.Model(&models.User{})
+	if search = strings.TrimSpace(strings.ToLower(search)); search != "" {
+		query = query.Where("LOWER(email) LIKE ?", "%"+search+"%")
+	}
+	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := r.db.Offset(offset).Limit(limit).Find(&users).Error
+	err := query.Preload("Roles").Order("created_at DESC").Offset((page - 1) * limit).Limit(limit).Find(&users).Error
 	return users, total, err
 }
 

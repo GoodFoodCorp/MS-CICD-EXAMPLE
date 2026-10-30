@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"auth-service/internal/services"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -22,14 +23,15 @@ func NewAdminController(userAdminSvc services.UserAdminService) *AdminController
 // @Security     Bearer
 // @Produce      json
 // @Param        page query int false "Page number" default(1)
-// @Param        limit query int false "Items per page" default(10)
+// @Param        limit query int false "Items per page (max 100)" default(10)
+// @Param        q query string false "Email contains"
 // @Success      200  {object} map[string]interface{} "Users list"
 // @Failure      401  {object} map[string]string "Unauthorized"
 // @Router       /api/admin/users [get]
 func (ctrl *AdminController) GetAllUsers(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
-	users, total, err := ctrl.userAdminService.GetAllUsers(page, limit)
+	users, total, err := ctrl.userAdminService.GetAllUsers(page, limit, c.Query("q"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -104,4 +106,41 @@ func (ctrl *AdminController) MakeAdmin(c *gin.Context) {
 		return
 	}
 	c.JSON(200, gin.H{"message": "Promoted"})
+}
+
+// @Summary      Set a user's role
+// @Description  Gives a user one role (user, manager, livreur, admin); a manager is attached to a restaurant. Their sessions are revoked so the change applies at once.
+// @Tags         Admin
+// @Security     Bearer
+// @Accept       json
+// @Produce      json
+// @Param        id path string true "User ID"
+// @Param        body body map[string]string true "role, restaurant_id"
+// @Success      200  {object} models.User
+// @Failure      400  {object} map[string]string "Unknown role or missing restaurant"
+// @Failure      403  {object} map[string]string "Self-demotion"
+// @Failure      404  {object} map[string]string "User not found"
+// @Router       /api/admin/users/{id}/role [put]
+func (ctrl *AdminController) SetUserAccess(c *gin.Context) {
+	var body struct {
+		Role         string `json:"role" binding:"required"`
+		RestaurantID string `json:"restaurant_id"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "le rôle est obligatoire"})
+		return
+	}
+	user, err := ctrl.userAdminService.SetUserAccess(c.GetString("userID"), c.Param("id"), body.Role, body.RestaurantID)
+	switch {
+	case errors.Is(err, services.ErrUnknownRole), errors.Is(err, services.ErrManagerNeedsShop):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, services.ErrSelfDemotion):
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+	case errors.Is(err, services.ErrUserNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case err != nil:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "mise à jour impossible"})
+	default:
+		c.JSON(http.StatusOK, user)
+	}
 }

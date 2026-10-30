@@ -115,6 +115,37 @@ func TestAuthRepository_Roles(t *testing.T) {
 	})
 }
 
+func TestAuthRepository_SetUserAccess(t *testing.T) {
+	repo, db := SetupTestDB()
+	user := &models.User{Email: "staff@u.com"}
+	_ = repo.CreateUser(user)
+	customer := &models.Role{Name: "user-sa", Slug: "user-sa"}
+	manager := &models.Role{Name: "manager-sa", Slug: "manager-sa"}
+	_ = repo.CreateRole(customer)
+	_ = repo.CreateRole(manager)
+	_ = repo.AssignRoleToUser(user.ID, customer.ID)
+	_ = repo.CreateRefreshToken(&models.RefreshToken{UserID: user.ID, Token: "staff-session", ExpiresAt: time.Now().Add(time.Hour)})
+	restaurant := "33333333-3333-3333-3333-333333333333"
+
+	err := repo.SetUserAccess(user.ID, manager.ID, &restaurant)
+
+	assert.NoError(t, err)
+	roles, _ := repo.GetUserRoles(user.ID)
+	if assert.Len(t, roles, 1) {
+		assert.Equal(t, "manager-sa", roles[0].Slug)
+	}
+	stored, _ := repo.FindUserByID(user.ID)
+	assert.Equal(t, restaurant, *stored.TenantID)
+	var session models.RefreshToken
+	db.First(&session, "token = ?", "staff-session")
+	assert.True(t, session.Revoked, "the user's sessions are revoked")
+
+	listed, total, err := repo.FindAll(1, 10, "STAFF@")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Len(t, listed[0].Roles, 1)
+}
+
 func TestAuthRepository_Tokens(t *testing.T) {
 	repo, _ := SetupTestDB()
 	restaurantID := "33333333-3333-3333-3333-333333333333"

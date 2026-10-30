@@ -1,6 +1,10 @@
 package repository
 
-import "auth-service/internal/models"
+import (
+	"auth-service/internal/models"
+
+	"gorm.io/gorm"
+)
 
 func (r *authRepo) CreateRole(role *models.Role) error {
 	return r.db.Create(role).Error
@@ -38,6 +42,21 @@ func (r *authRepo) AssignRoleToUser(userID string, roleID uint) error {
 func (r *authRepo) RemoveRoleFromUser(userID string, roleID uint) error {
 	user := models.User{ID: userID}
 	return r.db.Model(&user).Association("Roles").Delete(&models.Role{ID: roleID})
+}
+
+func (r *authRepo) SetUserAccess(userID string, roleID uint, tenantID *string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		user := models.User{ID: userID}
+		if err := tx.Model(&user).Update("tenant_id", tenantID).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&user).Association("Roles").Replace(&models.Role{ID: roleID}); err != nil {
+			return err
+		}
+		return tx.Model(&models.RefreshToken{}).
+			Where("user_id = ? AND revoked = ?", userID, false).
+			Update("revoked", true).Error
+	})
 }
 
 func (r *authRepo) GetUserRoles(userID string) ([]models.Role, error) {

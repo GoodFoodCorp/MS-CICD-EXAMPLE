@@ -13,7 +13,9 @@ type AuthRepository interface {
 	FindByEmail(email string, tenantID string) (*models.User, error)
 	FindUserByID(userID string) (*models.User, error)
 	FindGlobalByEmail(email string) (*models.User, error)
-	FindAll(page int, limit int) ([]models.User, int64, error)
+	// FindAll lists users with their roles, newest first; search filters on
+	// the email (case-insensitive substring).
+	FindAll(page int, limit int, search string) ([]models.User, int64, error)
 	DeleteUser(userID string) error
 
 	// Tokens
@@ -43,6 +45,9 @@ type AuthRepository interface {
 	AssignRoleToUser(userID string, roleID uint) error
 	RemoveRoleFromUser(userID string, roleID uint) error
 	GetUserRoles(userID string) ([]models.Role, error)
+	// SetUserAccess makes roleID the user's only role and tenantID their
+	// restaurant, and revokes their sessions so the change applies at once.
+	SetUserAccess(userID string, roleID uint, tenantID *string) error
 }
 
 type authRepo struct {
