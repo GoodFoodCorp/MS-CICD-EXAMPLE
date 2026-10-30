@@ -99,6 +99,41 @@ func seedDefaultRoles(db *gorm.DB) (map[string]*models.Role, error) {
 //  3. Manager Montparnasse — gère le restaurant Good Food Montparnasse
 //  4. Customer (sans tenant) — commande dans n'importe quel restaurant
 //  5. Livreur (sans tenant)
+type seedUser struct {
+	Email    string
+	Password string
+	EnvEmail string
+	EnvPass  string
+	TenantID *string
+	RoleSlug string
+	Label    string
+}
+
+// accountsToSeed resolves each account's credentials (environment first,
+// then the demo default). The demo defaults are public: outside development
+// (ENV=production) an account is only created when its email and password
+// are both given — typically ADMIN_EMAIL / ADMIN_PASSWORD for the first
+// head-office admin — unless SEED_DEMO_USERS=true (a demo server).
+func accountsToSeed(users []seedUser, getenv func(string) string) []seedUser {
+	demo := getenv("ENV") != "production" || getenv("SEED_DEMO_USERS") == "true"
+	var out []seedUser
+	for _, su := range users {
+		email, password := getenv(su.EnvEmail), getenv(su.EnvPass)
+		if !demo && (email == "" || password == "") {
+			continue
+		}
+		if email == "" {
+			email = su.Email
+		}
+		if password == "" {
+			password = su.Password
+		}
+		su.Email, su.Password = email, password
+		out = append(out, su)
+	}
+	return out
+}
+
 func seedUsers(db *gorm.DB, restaurants map[string]services.Restaurant, roles map[string]*models.Role) error {
 	// Un pointeur nil laisse l'utilisateur sans restaurant (client, livreur, ou
 	// manager si franchise-service n'a pas répondu).
@@ -111,16 +146,6 @@ func seedUsers(db *gorm.DB, restaurants map[string]services.Restaurant, roles ma
 	}
 	republique := restaurantID("default")
 	montparnasse := restaurantID("montparnasse")
-
-	type seedUser struct {
-		Email    string
-		Password string
-		EnvEmail string
-		EnvPass  string
-		TenantID *string
-		RoleSlug string
-		Label    string
-	}
 
 	users := []seedUser{
 		{
@@ -170,15 +195,8 @@ func seedUsers(db *gorm.DB, restaurants map[string]services.Restaurant, roles ma
 		},
 	}
 
-	for _, su := range users {
-		email := os.Getenv(su.EnvEmail)
-		password := os.Getenv(su.EnvPass)
-		if email == "" {
-			email = su.Email
-		}
-		if password == "" {
-			password = su.Password
-		}
+	for _, su := range accountsToSeed(users, os.Getenv) {
+		email, password := su.Email, su.Password
 
 		var user models.User
 		result := db.Where("email = ?", email).First(&user)
