@@ -52,6 +52,31 @@ func TestAuthController_Register_Success(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "user_id")
 }
 
+func TestAuthController_Register_TellsWhetherTheEmailMustBeConfirmed(t *testing.T) {
+	for _, tc := range []struct {
+		autoVerify string
+		required   bool
+	}{{"true", false}, {"false", true}, {"", true}} {
+		t.Setenv("AUTO_VERIFY_EMAIL", tc.autoVerify)
+		mockSrv := new(MockAuthService)
+		router := SetupAuthRouter(mockSrv)
+		req := models.RegisterRequest{Email: "verify@test.com", Password: "StrongPassword123!"}
+		mockSrv.On("RegisterUser", &req).Return("user-id-789", nil).Once()
+
+		body, _ := json.Marshal(req)
+		w := httptest.NewRecorder()
+		httpReq, _ := http.NewRequest("POST", "/api/auth/register", bytes.NewBuffer(body))
+		httpReq.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(w, httpReq)
+
+		var resp struct {
+			Required bool `json:"email_verification_required"`
+		}
+		_ = json.Unmarshal(w.Body.Bytes(), &resp)
+		assert.Equal(t, tc.required, resp.Required, "AUTO_VERIFY_EMAIL=%q", tc.autoVerify)
+	}
+}
+
 func TestAuthController_Register_Success_NoTenant(t *testing.T) {
 	mockSrv := new(MockAuthService)
 	router := SetupAuthRouter(mockSrv)

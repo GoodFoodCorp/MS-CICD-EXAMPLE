@@ -108,7 +108,13 @@ func (ctrl *AuthController) Register(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"message": "Compte créé. Veuillez vérifier vos emails.", "user_id": userID})
+	// The client signs in at once, or tells the user to open the email first.
+	verify := services.EmailVerificationRequired()
+	message := "Compte créé."
+	if verify {
+		message = "Compte créé. Confirmez votre adresse email pour vous connecter."
+	}
+	c.JSON(http.StatusCreated, gin.H{"message": message, "user_id": userID, "email_verification_required": verify})
 }
 
 // @Summary      Login user
