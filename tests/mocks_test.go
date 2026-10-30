@@ -44,8 +44,12 @@ func (m *MockAuthRepository) UpdateUserPassword(userID string, hashed string) er
 	return m.Called(userID, hashed).Error(0)
 }
 
-func (m *MockAuthRepository) FindAll(page, limit int) ([]models.User, int64, error) {
-	args := m.Called(page, limit)
+func (m *MockAuthRepository) SetUserAccess(userID string, roleID uint, tenantID *string) error {
+	return m.Called(userID, roleID, tenantID).Error(0)
+}
+
+func (m *MockAuthRepository) FindAll(page, limit int, search string) ([]models.User, int64, error) {
+	args := m.Called(page, limit, search)
 	return args.Get(0).([]models.User), args.Get(1).(int64), args.Error(2)
 }
 
@@ -225,8 +229,16 @@ type MockUserAdminService struct {
 	mock.Mock
 }
 
-func (m *MockUserAdminService) GetAllUsers(page int, limit int) ([]models.User, int64, error) {
-	args := m.Called(page, limit)
+func (m *MockUserAdminService) SetUserAccess(actorID, userID, roleSlug, restaurantID string) (*models.User, error) {
+	args := m.Called(actorID, userID, roleSlug, restaurantID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.User), args.Error(1)
+}
+
+func (m *MockUserAdminService) GetAllUsers(page int, limit int, search string) ([]models.User, int64, error) {
+	args := m.Called(page, limit, search)
 	return args.Get(0).([]models.User), args.Get(1).(int64), args.Error(2)
 }
 

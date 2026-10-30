@@ -3,14 +3,17 @@ package tests
 import (
 	"auth-service/internal/controllers"
 	"auth-service/internal/models"
+	"auth-service/internal/services"
 	"bytes"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 // ─── Setup ──────────────────────────────────────────
@@ -33,6 +36,7 @@ func SetupAdminRouter(srv *MockUserAdminService) *gin.Engine {
 		admin.GET("/users/:id", ctrl.GetUserByID)
 		admin.GET("/search", ctrl.GetUserByEmail)
 		admin.POST("/promote", ctrl.MakeAdmin)
+		admin.PUT("/users/:id/role", ctrl.SetUserAccess)
 	}
 
 	return r
@@ -45,7 +49,7 @@ func TestAdminController_GetAllUsers_Success(t *testing.T) {
 	router := SetupAdminRouter(mockSrv)
 
 	users := []models.User{{ID: "U1", Email: "a@b.com"}, {ID: "U2", Email: "c@d.com"}}
-	mockSrv.On("GetAllUsers", 1, 10).Return(users, int64(2), nil).Once()
+	mockSrv.On("GetAllUsers", 1, 10, "").Return(users, int64(2), nil).Once()
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/admin/users?page=1&limit=10", nil)
@@ -60,7 +64,7 @@ func TestAdminController_GetAllUsers_DefaultPagination(t *testing.T) {
 	mockSrv := new(MockUserAdminService)
 	router := SetupAdminRouter(mockSrv)
 
-	mockSrv.On("GetAllUsers", 1, 10).Return([]models.User{}, int64(0), nil).Once()
+	mockSrv.On("GetAllUsers", 1, 10, "").Return([]models.User{}, int64(0), nil).Once()
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/admin/users", nil)
@@ -73,7 +77,7 @@ func TestAdminController_GetAllUsers_ServiceError(t *testing.T) {
 	mockSrv := new(MockUserAdminService)
 	router := SetupAdminRouter(mockSrv)
 
-	mockSrv.On("GetAllUsers", 1, 10).Return([]models.User{}, int64(0), errors.New("db error")).Once()
+	mockSrv.On("GetAllUsers", 1, 10, "").Return([]models.User{}, int64(0), errors.New("db error")).Once()
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/admin/users", nil)
@@ -210,4 +214,40 @@ func TestAdminController_MakeAdmin_ServiceError(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// ─── SetUserAccess ─────────────────────────────────
+
+func TestAdminController_SetUserAccess(t *testing.T) {
+	restaurant := "11111111-1111-1111-1111-111111111111"
+	cases := []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{"assigned", nil, http.StatusOK},
+		{"unknown role", services.ErrUnknownRole, http.StatusBadRequest},
+		{"manager without restaurant", services.ErrManagerNeedsShop, http.StatusBadRequest},
+		{"self demotion", services.ErrSelfDemotion, http.StatusForbidden},
+		{"unknown user", services.ErrUserNotFound, http.StatusNotFound},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockSrv := new(MockUserAdminService)
+			router := SetupAdminRouter(mockSrv)
+			var user *models.User
+			if tc.err == nil {
+				user = &models.User{ID: "U1", TenantID: &restaurant}
+			}
+			mockSrv.On("SetUserAccess", mock.Anything, "U1", "manager", restaurant).Return(user, tc.err).Once()
+
+			w := httptest.NewRecorder()
+			body := strings.NewReader(`{"role":"manager","restaurant_id":"` + restaurant + `"}`)
+			req, _ := http.NewRequest("PUT", "/api/admin/users/U1/role", body)
+			req.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(w, req)
+
+			assert.Equal(t, tc.status, w.Code)
+		})
+	}
 }

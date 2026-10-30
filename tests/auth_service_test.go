@@ -127,11 +127,69 @@ func TestUserAdminService_GetAllUsers(t *testing.T) {
 	repo := new(MockAuthRepository)
 	srv := services.NewUserAdminService(repo)
 
-	repo.On("FindAll", 1, 10).Return([]models.User{{ID: "U1"}}, int64(1), nil).Once()
-	users, total, err := srv.GetAllUsers(1, 10)
+	repo.On("FindAll", 1, 10, "jean").Return([]models.User{{ID: "U1"}}, int64(1), nil).Once()
+	users, total, err := srv.GetAllUsers(1, 10, "jean")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Len(t, users, 1)
+}
+
+func TestUserAdminService_GetAllUsers_CapsThePageSize(t *testing.T) {
+	repo := new(MockAuthRepository)
+	srv := services.NewUserAdminService(repo)
+
+	repo.On("FindAll", 1, 100, "").Return([]models.User{}, int64(0), nil).Once()
+	_, _, err := srv.GetAllUsers(0, 100000, "")
+	assert.NoError(t, err)
+	repo.AssertExpectations(t)
+}
+
+func TestUserAdminService_SetUserAccess(t *testing.T) {
+	restaurant := "11111111-1111-1111-1111-111111111111"
+
+	t.Run("a manager is attached to their restaurant", func(t *testing.T) {
+		repo := new(MockAuthRepository)
+		srv := services.NewUserAdminService(repo)
+		repo.On("FindUserByID", "U1").Return(&models.User{ID: "U1"}, nil)
+		repo.On("FindRoleBySlug", "manager").Return(&models.Role{ID: 2, Slug: "manager"}, nil)
+		repo.On("SetUserAccess", "U1", uint(2), &restaurant).Return(nil).Once()
+
+		user, err := srv.SetUserAccess("ADMIN", "U1", "manager", restaurant)
+
+		assert.NoError(t, err)
+		assert.Equal(t, restaurant, *user.TenantID)
+		assert.Equal(t, "manager", user.Roles[0].Slug)
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("other roles belong to no restaurant", func(t *testing.T) {
+		repo := new(MockAuthRepository)
+		srv := services.NewUserAdminService(repo)
+		repo.On("FindUserByID", "U1").Return(&models.User{ID: "U1", TenantID: &restaurant}, nil)
+		repo.On("FindRoleBySlug", "livreur").Return(&models.Role{ID: 5, Slug: "livreur"}, nil)
+		repo.On("SetUserAccess", "U1", uint(5), (*string)(nil)).Return(nil).Once()
+
+		user, err := srv.SetUserAccess("ADMIN", "U1", "livreur", restaurant)
+
+		assert.NoError(t, err)
+		assert.Nil(t, user.TenantID)
+	})
+
+	t.Run("refusals", func(t *testing.T) {
+		repo := new(MockAuthRepository)
+		srv := services.NewUserAdminService(repo)
+		repo.On("FindUserByID", "GHOST").Return(nil, assert.AnError)
+
+		_, err := srv.SetUserAccess("ADMIN", "U1", "superuser", "")
+		assert.ErrorIs(t, err, services.ErrUnknownRole)
+		_, err = srv.SetUserAccess("ADMIN", "U1", "manager", "not-a-restaurant")
+		assert.ErrorIs(t, err, services.ErrManagerNeedsShop)
+		_, err = srv.SetUserAccess("ADMIN", "ADMIN", "user", "")
+		assert.ErrorIs(t, err, services.ErrSelfDemotion)
+		_, err = srv.SetUserAccess("ADMIN", "GHOST", "user", "")
+		assert.ErrorIs(t, err, services.ErrUserNotFound)
+		repo.AssertNotCalled(t, "SetUserAccess", mock.Anything, mock.Anything, mock.Anything)
+	})
 }
 
 func TestUserAdminService_GetUserByID(t *testing.T) {

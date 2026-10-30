@@ -261,7 +261,7 @@ func main() {
 			if limit < 1 || limit > 100 {
 				limit = 10
 			}
-			users, total, err := userAdminService.GetAllUsers(page, limit)
+			users, total, err := userAdminService.GetAllUsers(page, limit, "")
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Erreur serveur"})
 				return
@@ -295,6 +295,7 @@ func main() {
 		adminGroup.POST("/promote", adminController.MakeAdmin)
 		adminGroup.GET("/users", adminController.GetAllUsers)
 		adminGroup.GET("/users/:id", adminController.GetUserByID)
+		adminGroup.PUT("/users/:id/role", adminController.SetUserAccess)
 		adminGroup.GET("/search", adminController.GetUserByEmail)
 
 		// Gestion des rôles
