@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"log"
 	"os"
 	"regexp"
 	"time"
@@ -154,7 +155,9 @@ func (s *authService) RegisterUser(req *models.RegisterRequest) (string, error) 
 		s.repo.CreateEmailVerificationToken(emailToken)
 
 		go func() {
-			s.email.SendVerificationEmail(user.Email, token)
+			if err := s.email.SendVerificationEmail(user.Email, token); err != nil {
+				log.Printf("[ERROR] Email de vérification non envoyé à %s: %v", user.Email, err)
+			}
 		}()
 	}
 
@@ -236,7 +239,9 @@ func (s *authService) ForgotPassword(req *models.ForgotPasswordRequest) (string,
 	s.repo.CreatePasswordResetToken(pwdReset)
 
 	go func() {
-		s.email.SendPasswordResetEmail(user.Email, token)
+		if err := s.email.SendPasswordResetEmail(user.Email, token); err != nil {
+			log.Printf("[ERROR] Email de réinitialisation non envoyé à %s: %v", user.Email, err)
+		}
 	}()
 
 	return "", nil
