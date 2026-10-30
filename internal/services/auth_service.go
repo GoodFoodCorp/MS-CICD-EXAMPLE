@@ -101,6 +101,12 @@ func (s *authService) generateTokens(user *models.User) (string, string, error) 
 	return accessToken, refreshToken, nil
 }
 
+// EmailVerificationRequired reports whether new accounts must confirm their
+// email before signing in (AUTO_VERIFY_EMAIL=true skips it, for local demos).
+func EmailVerificationRequired() bool {
+	return os.Getenv("AUTO_VERIFY_EMAIL") != "true"
+}
+
 func (s *authService) RegisterUser(req *models.RegisterRequest) (string, error) {
 	if err := validatePasswordComplex(req.Password); err != nil {
 		return "", err
@@ -119,7 +125,7 @@ func (s *authService) RegisterUser(req *models.RegisterRequest) (string, error) 
 
 	// En dev (AUTO_VERIFY_EMAIL=true), on crée le compte déjà vérifié car
 	// aucun SMTP n'est configuré — le client peut se connecter immédiatement.
-	autoVerify := os.Getenv("AUTO_VERIFY_EMAIL") == "true"
+	autoVerify := !EmailVerificationRequired()
 
 	user := &models.User{
 		Email:           req.Email,
