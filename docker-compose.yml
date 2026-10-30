@@ -45,6 +45,17 @@ services:
     networks:
       - microservices-net
 
+  # Local SMTP sandbox: every email the platform sends lands in its inbox at
+  # http://localhost:8025 (SMTP_HOST=mailpit, SMTP_PORT=1025). Never in production.
+  mailpit:
+    image: axllent/mailpit:v1.21
+    container_name: mailpit
+    restart: unless-stopped
+    ports:
+      - "8025:8025"
+    networks:
+      - microservices-net
+
 networks:
   microservices-net:
     external: true
