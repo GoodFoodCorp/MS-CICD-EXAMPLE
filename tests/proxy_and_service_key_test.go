@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/ulule/limiter/v3/drivers/store/memory"
 )
 
 func limitedRouter(t *testing.T) *gin.Engine {
@@ -17,7 +18,7 @@ func limitedRouter(t *testing.T) *gin.Engine {
 	if err := r.SetTrustedProxies(middleware.TrustedProxies()); err != nil {
 		t.Fatal(err)
 	}
-	r.Use(middleware.RateLimitMiddleware())
+	r.Use(middleware.NewRateLimitsWithStore(memory.NewStore()).Sensitive)
 	r.GET("/", func(c *gin.Context) { c.Status(http.StatusOK) })
 	return r
 }
@@ -38,7 +39,7 @@ func hit(r *gin.Engine, remote, forwardedFor string) int {
 func TestRateLimit_KeysOnForwardedClientBehindTrustedProxy(t *testing.T) {
 	t.Setenv("TRUSTED_PROXIES", "")
 	r := limitedRouter(t)
-	for i := 0; i < 10; i++ {
+	for i := int64(0); i < middleware.SensitiveRate.Limit; i++ {
 		assert.Equal(t, http.StatusOK, hit(r, "10.42.0.5:443", "203.0.113.1"))
 	}
 	assert.Equal(t, http.StatusTooManyRequests, hit(r, "10.42.0.5:443", "203.0.113.1"))
@@ -49,7 +50,7 @@ func TestRateLimit_KeysOnForwardedClientBehindTrustedProxy(t *testing.T) {
 func TestRateLimit_IgnoresForwardedHeaderFromUntrustedClient(t *testing.T) {
 	t.Setenv("TRUSTED_PROXIES", "")
 	r := limitedRouter(t)
-	for i := 0; i < 10; i++ {
+	for i := int64(0); i < middleware.SensitiveRate.Limit; i++ {
 		assert.Equal(t, http.StatusOK, hit(r, "198.51.100.7:5000", "203.0.113.9"))
 	}
 	assert.Equal(t, http.StatusTooManyRequests, hit(r, "198.51.100.7:5000", "203.0.113.10"))

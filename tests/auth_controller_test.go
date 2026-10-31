@@ -3,6 +3,7 @@ package tests
 import (
 	"auth-service/internal/controllers"
 	"auth-service/internal/models"
+	"auth-service/internal/services"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -124,7 +125,7 @@ func TestAuthController_Register_Conflict(t *testing.T) {
 	router := SetupAuthRouter(mockSrv)
 
 	req := models.RegisterRequest{Email: "dup@test.com", Password: "StrongPassword123!", TenantID: "T1"}
-	mockSrv.On("RegisterUser", &req).Return("", errors.New("cet email est déjà utilisé")).Once()
+	mockSrv.On("RegisterUser", &req).Return("", services.ErrEmailTaken).Once()
 
 	body, _ := json.Marshal(req)
 	w := httptest.NewRecorder()

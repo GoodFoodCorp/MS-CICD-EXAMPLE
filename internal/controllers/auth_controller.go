@@ -3,6 +3,7 @@ package controllers
 import (
 	"auth-service/internal/models"
 	"auth-service/internal/services"
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -100,12 +101,20 @@ func (ctrl *AuthController) VerifyEmail(c *gin.Context) {
 func (ctrl *AuthController) Register(c *gin.Context) {
 	var req models.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": bindingMessage(err)})
 		return
 	}
 	userID, err := ctrl.service.RegisterUser(&req)
-	if err != nil {
+	var refused services.InputError
+	switch {
+	case errors.Is(err, services.ErrEmailTaken):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	case errors.As(err, &refused):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	case err != nil:
+		internalError(c, err)
 		return
 	}
 	// The client signs in at once, or tells the user to open the email first.
@@ -130,7 +139,7 @@ func (ctrl *AuthController) Register(c *gin.Context) {
 func (ctrl *AuthController) Login(c *gin.Context) {
 	var req models.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": bindingMessage(err)})
 		return
 	}
 	accessToken, refreshToken, err := ctrl.service.LoginUser(&req)
@@ -223,7 +232,7 @@ func (ctrl *AuthController) Logout(c *gin.Context) {
 func (ctrl *AuthController) ForgotPassword(c *gin.Context) {
 	var req models.ForgotPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": bindingMessage(err)})
 		return
 	}
 	if _, err := ctrl.service.ForgotPassword(&req); err != nil {
@@ -245,7 +254,7 @@ func (ctrl *AuthController) ForgotPassword(c *gin.Context) {
 func (ctrl *AuthController) ResetPassword(c *gin.Context) {
 	var req models.ResetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(400, gin.H{"error": bindingMessage(err)})
 		return
 	}
 	if err := ctrl.service.ResetPassword(&req); err != nil {
