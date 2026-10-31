@@ -33,7 +33,7 @@ func (ctrl *AdminController) GetAllUsers(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
 	users, total, err := ctrl.userAdminService.GetAllUsers(page, limit, c.Query("q"))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		internalError(c, err)
 		return
 	}
 	c.JSON(200, gin.H{"data": users, "total": total})
@@ -98,11 +98,11 @@ func (ctrl *AdminController) MakeAdmin(c *gin.Context) {
 	}
 	var r Req
 	if err := c.ShouldBindJSON(&r); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": bindingMessage(err)})
 		return
 	}
 	if err := ctrl.userAdminService.PromoteUserToAdmin(r.UserID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		internalError(c, err)
 		return
 	}
 	c.JSON(200, gin.H{"message": "Promoted"})

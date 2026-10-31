@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -42,17 +43,47 @@ func NewAuthService(repo repository.AuthRepository, email EmailService) AuthServ
 	return &authService{repo: repo, email: email}
 }
 
+// InputError is a refusal caused by what the user typed: its message is
+// meant for them.
+type InputError string
+
+func (e InputError) Error() string { return string(e) }
+
+// ErrEmailTaken: an account already uses this email.
+var ErrEmailTaken = InputError("cet email est déjà utilisé")
+
+// validatePasswordComplex applies the CNIL recommendation for a password
+// protected by a login rate limit: 8+ characters mixing at least three of
+// lower case, upper case, digits and symbols. bcrypt reads 72 bytes at most.
 func validatePasswordComplex(pass string) error {
 	if len(pass) < 8 {
-		return errors.New("le mot de passe doit faire au moins 8 caractères")
+		return InputError("le mot de passe doit faire au moins 8 caractères")
 	}
-	hasNumber := regexp.MustCompile(`[0-9]`).MatchString(pass)
-	hasLetter := regexp.MustCompile(`[a-zA-Z]`).MatchString(pass)
-	if !hasNumber || !hasLetter {
-		return errors.New("le mot de passe doit contenir au moins une lettre et un chiffre")
+	if len(pass) > 72 {
+		return InputError("le mot de passe doit faire au plus 72 caractères")
+	}
+	kinds := 0
+	for _, re := range []*regexp.Regexp{lowerRe, upperRe, digitRe, symbolRe} {
+		if re.MatchString(pass) {
+			kinds++
+		}
+	}
+	if kinds < 3 {
+		return InputError("le mot de passe doit mêler au moins trois types de caractères : minuscules, majuscules, chiffres, symboles")
 	}
 	return nil
 }
+
+var (
+	lowerRe  = regexp.MustCompile(`\p{Ll}`)
+	upperRe  = regexp.MustCompile(`\p{Lu}`)
+	digitRe  = regexp.MustCompile(`[0-9]`)
+	symbolRe = regexp.MustCompile(`[^\p{L}0-9]`)
+)
+
+// NormalizeEmail is how emails are stored and looked up: one account per
+// address, whatever the case or stray spaces.
+func NormalizeEmail(email string) string { return strings.ToLower(strings.TrimSpace(email)) }
 
 func generateTokenString() (string, error) {
 	bytes := make([]byte, 16)
@@ -108,6 +139,7 @@ func EmailVerificationRequired() bool {
 }
 
 func (s *authService) RegisterUser(req *models.RegisterRequest) (string, error) {
+	req.Email = NormalizeEmail(req.Email)
 	if err := validatePasswordComplex(req.Password); err != nil {
 		return "", err
 	}
@@ -115,7 +147,7 @@ func (s *authService) RegisterUser(req *models.RegisterRequest) (string, error) 
 	// Vérifier si l'email existe déjà (globalement pour les utilisateurs sans tenant)
 	existing, err := s.repo.FindGlobalByEmail(req.Email)
 	if err == nil && existing != nil {
-		return "", errors.New("cet email est déjà utilisé")
+		return "", ErrEmailTaken
 	}
 
 	hashed, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
@@ -174,7 +206,7 @@ func (s *authService) RegisterUser(req *models.RegisterRequest) (string, error) 
 }
 
 func (s *authService) LoginUser(req *models.LoginRequest) (string, string, error) {
-	user, err := s.repo.FindGlobalByEmail(req.Email)
+	user, err := s.repo.FindGlobalByEmail(NormalizeEmail(req.Email))
 	if err != nil {
 		return "", "", errors.New("identifiants incorrects")
 	}
@@ -232,7 +264,7 @@ func (s *authService) VerifyEmail(token string) error {
 }
 
 func (s *authService) ForgotPassword(req *models.ForgotPasswordRequest) (string, error) {
-	user, err := s.repo.FindGlobalByEmail(req.Email)
+	user, err := s.repo.FindGlobalByEmail(NormalizeEmail(req.Email))
 	if err != nil {
 		return "", nil
 	}

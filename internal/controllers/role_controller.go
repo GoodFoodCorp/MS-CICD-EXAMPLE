@@ -33,7 +33,7 @@ func (ctrl *RoleController) CreateRole(c *gin.Context) {
 	}
 	var req RoleReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": bindingMessage(err)})
 		return
 	}
 
@@ -63,12 +63,12 @@ func (ctrl *RoleController) AssignRoleToUser(c *gin.Context) {
 	}
 	var req AssignReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": bindingMessage(err)})
 		return
 	}
 
 	if err := ctrl.service.AssignRoleToUser(req.UserID, req.RoleID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		internalError(c, err)
 		return
 	}
 
@@ -93,12 +93,12 @@ func (ctrl *RoleController) RemoveRoleFromUser(c *gin.Context) {
 	}
 	var req RemoveReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": bindingMessage(err)})
 		return
 	}
 
 	if err := ctrl.service.RemoveRoleFromUser(req.UserID, req.RoleID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		internalError(c, err)
 		return
 	}
 
@@ -119,7 +119,7 @@ func (ctrl *RoleController) GetUserRoles(c *gin.Context) {
 
 	roles, err := ctrl.service.GetUserRoles(userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		internalError(c, err)
 		return
 	}
 
@@ -137,7 +137,7 @@ func (ctrl *RoleController) GetUserRoles(c *gin.Context) {
 func (ctrl *RoleController) GetAllRoles(c *gin.Context) {
 	roles, err := ctrl.service.GetAllRoles()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		internalError(c, err)
 		return
 	}
 

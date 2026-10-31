@@ -47,7 +47,7 @@ func (ctrl *ProfileController) GetProfile(c *gin.Context) {
 func (ctrl *ProfileController) ChangePassword(c *gin.Context) {
 	var req models.ChangePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": bindingMessage(err)})
 		return
 	}
 	if err := ctrl.service.ChangePassword(c.GetString("userID"), &req); err != nil {
@@ -70,7 +70,7 @@ func (ctrl *ProfileController) ChangePassword(c *gin.Context) {
 func (ctrl *ProfileController) DeleteAccount(c *gin.Context) {
 	var req models.DeleteAccountRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": bindingMessage(err)})
 		return
 	}
 	if err := ctrl.service.DeleteAccount(c.GetString("userID"), &req); err != nil {

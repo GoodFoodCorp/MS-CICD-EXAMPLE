@@ -183,7 +183,7 @@ func main() {
 </html>`)
 	})
 
-	limitMiddleware := middleware.RateLimitMiddleware()
+	limits := middleware.NewRateLimits()
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "OK", "uptime": "Running"})
@@ -215,23 +215,22 @@ func main() {
 	})
 
 	authGroup := r.Group("/api/auth")
-	authGroup.Use(limitMiddleware)
 	{
-		authGroup.POST("/register", authController.Register)
-		authGroup.POST("/login", authController.Login)
-		authGroup.GET("/verify-email", authController.VerifyEmail)
+		authGroup.POST("/register", limits.Sensitive, authController.Register)
+		authGroup.POST("/login", limits.Sensitive, limits.Account, authController.Login)
+		authGroup.GET("/verify-email", limits.Sensitive, authController.VerifyEmail)
 
-		authGroup.POST("/refresh", authController.Refresh)
-		authGroup.POST("/logout", authController.Logout)
-		authGroup.POST("/forgot-password", authController.ForgotPassword)
-		authGroup.POST("/reset-password", authController.ResetPassword)
+		authGroup.POST("/refresh", limits.Session, authController.Refresh)
+		authGroup.POST("/logout", limits.Session, authController.Logout)
+		authGroup.POST("/forgot-password", limits.Sensitive, limits.Account, authController.ForgotPassword)
+		authGroup.POST("/reset-password", limits.Sensitive, authController.ResetPassword)
 
 		// Connexion via un fournisseur externe (Google, Microsoft).
 		// 'providers' est déclaré avant ':provider' : sinon la route
 		// paramétrée capterait le mot littéral.
-		authGroup.GET("/oauth/providers", oauthController.Providers)
-		authGroup.GET("/oauth/:provider", oauthController.Start)
-		authGroup.GET("/oauth/:provider/callback", oauthController.Callback)
+		authGroup.GET("/oauth/providers", limits.Session, oauthController.Providers)
+		authGroup.GET("/oauth/:provider", limits.Session, oauthController.Start)
+		authGroup.GET("/oauth/:provider/callback", limits.Session, oauthController.Callback)
 	}
 
 	protectedAuth := r.Group("/api/auth")
