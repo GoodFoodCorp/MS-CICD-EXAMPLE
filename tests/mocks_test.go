@@ -109,6 +109,11 @@ func (m *MockAuthRepository) RevokeAllRefreshTokensForUser(userID string) error 
 	return m.Called(userID).Error(0)
 }
 
+func (m *MockAuthRepository) PurgeDeletedUsers() (int64, error) {
+	args := m.Called()
+	return args.Get(0).(int64), args.Error(1)
+}
+
 func (m *MockAuthRepository) DeleteUser(userID string) error {
 	return m.Called(userID).Error(0)
 }

@@ -17,6 +17,7 @@ type AuthRepository interface {
 	// the email (case-insensitive substring).
 	FindAll(page int, limit int, search string) ([]models.User, int64, error)
 	DeleteUser(userID string) error
+	PurgeDeletedUsers() (int64, error)
 
 	// Tokens
 	CreateRefreshToken(token *models.RefreshToken) error
@@ -54,13 +55,36 @@ type authRepo struct {
 	db *gorm.DB
 }
 
+// DeleteUser erases the account for good (RGPD right to erasure): the row
+// and everything tied to it. A soft delete would keep the email and the
+// password hash, and block a new sign-up with the same address.
 func (r *authRepo) DeleteUser(userID string) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ?", userID).Delete(&models.UserRole{}).Error; err != nil { return err }
-		if err := tx.Where("user_id = ?", userID).Delete(&models.RefreshToken{}).Error; err != nil { return err }
-		if err := tx.Where("id = ?", userID).Delete(&models.User{}).Error; err != nil { return err }
-		return nil
+	return r.db.Transaction(func(tx *gorm.DB) error { return eraseUsers(tx, "id = ?", userID) })
+}
+
+// PurgeDeletedUsers erases the accounts an earlier version only marked as
+// deleted. Idempotent; run at start-up.
+func (r *authRepo) PurgeDeletedUsers() (int64, error) {
+	var purged int64
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		res := tx.Unscoped().Model(&models.User{}).Where("deleted_at IS NOT NULL").Count(&purged)
+		if res.Error != nil || purged == 0 {
+			return res.Error
+		}
+		return eraseUsers(tx, "deleted_at IS NOT NULL")
 	})
+	return purged, err
+}
+
+func eraseUsers(tx *gorm.DB, where string, args ...any) error {
+	ids := tx.Unscoped().Model(&models.User{}).Select("id").Where(where, args...)
+	for _, dependent := range []any{&models.UserRole{}, &models.RefreshToken{}, &models.EmailVerificationToken{},
+		&models.PasswordResetToken{}, &models.OAuthAccount{}} {
+		if err := tx.Unscoped().Where("user_id IN (?)", ids).Delete(dependent).Error; err != nil {
+			return err
+		}
+	}
+	return tx.Unscoped().Where(where, args...).Delete(&models.User{}).Error
 }
 
 func NewAuthRepository(db *gorm.DB) AuthRepository {
