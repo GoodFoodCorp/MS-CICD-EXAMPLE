@@ -40,7 +40,7 @@ func TestAuthController_Register_Success(t *testing.T) {
 	mockSrv := new(MockAuthService)
 	router := SetupAuthRouter(mockSrv)
 
-	req := models.RegisterRequest{Email: "test@test.com", Password: "StrongPassword123!", TenantID: "T1"}
+	req := models.RegisterRequest{Email: "test@test.com", Password: "StrongPassword123!"}
 	mockSrv.On("RegisterUser", &req).Return("user-id-123", nil).Once()
 
 	body, _ := json.Marshal(req)
@@ -124,7 +124,7 @@ func TestAuthController_Register_Conflict(t *testing.T) {
 	mockSrv := new(MockAuthService)
 	router := SetupAuthRouter(mockSrv)
 
-	req := models.RegisterRequest{Email: "dup@test.com", Password: "StrongPassword123!", TenantID: "T1"}
+	req := models.RegisterRequest{Email: "dup@test.com", Password: "StrongPassword123!"}
 	mockSrv.On("RegisterUser", &req).Return("", services.ErrEmailTaken).Once()
 
 	body, _ := json.Marshal(req)

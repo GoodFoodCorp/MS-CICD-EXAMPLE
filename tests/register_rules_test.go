@@ -74,3 +74,17 @@ func TestRegister_AnswersInPlainFrench(t *testing.T) {
 	SetupAuthRouter(weak).ServeHTTP(w, req)
 	assert.Equal(t, http.StatusBadRequest, w.Code, "a weak password is the user's input, not a conflict")
 }
+
+// A public sign-up is a customer: a restaurant id in the body is ignored.
+func TestRegister_NeverJoinsARestaurant(t *testing.T) {
+	repo := new(MockAuthRepository)
+	repo.On("FindGlobalByEmail", "a@b.fr").Return(nil, errors.New("not found")).Once()
+	var created *models.User
+	repo.On("CreateUser", mock.Anything).Run(func(args mock.Arguments) { created = args.Get(0).(*models.User) }).Return(errors.New("stop")).Once()
+	var req models.RegisterRequest
+	_ = json.Unmarshal([]byte(`{"email":"a@b.fr","password":"Motdepasse1","tenantID":"6f74fa62-3e7b-45aa-baa3-158de56a2ce2","role":"admin"}`), &req)
+	_, _ = services.NewAuthService(repo, new(MockEmailService)).RegisterUser(&req)
+	if assert.NotNil(t, created) {
+		assert.Nil(t, created.TenantID)
+	}
+}

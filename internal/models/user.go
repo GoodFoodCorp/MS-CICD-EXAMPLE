@@ -26,10 +26,11 @@ func (u *User) BeforeCreate(tx *gorm.DB) (err error) {
 	return
 }
 
+// RegisterRequest is a public sign-up: a customer account, whatever else
+// the body may claim (role, restaurant).
 type RegisterRequest struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,min=8"`
-	TenantID string `json:"tenantID"`
 }
 
 type LoginRequest struct {
