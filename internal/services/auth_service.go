@@ -165,21 +165,13 @@ func (s *authService) RegisterUser(req *models.RegisterRequest) (string, error) 
 		IsEmailVerified: autoVerify,
 	}
 
-	// Si un tenantID est fourni, on l'assigne (utilisateur tenant/restaurant)
-	if req.TenantID != "" {
-		user.TenantID = &req.TenantID
-	}
-
+	// Signing up makes a customer, never restaurant staff: only head office
+	// attaches an account to a restaurant (admin role endpoint).
 	if err := s.repo.CreateUser(user); err != nil {
 		return "", err
 	}
-
-	// Assigner le rôle "user" par défaut aux utilisateurs sans tenant (customers)
-	if req.TenantID == "" {
-		userRole, roleErr := s.repo.FindRoleBySlug("user")
-		if roleErr == nil {
-			s.repo.AssignRoleToUser(user.ID, userRole.ID)
-		}
+	if userRole, roleErr := s.repo.FindRoleBySlug("user"); roleErr == nil {
+		s.repo.AssignRoleToUser(user.ID, userRole.ID)
 	}
 
 	// Si l'email est déjà vérifié (mode dev), pas de token ni d'email à envoyer.
