@@ -77,6 +77,11 @@ func main() {
 						log.Printf("[WARNING] Echec migration DB: %v", migrateErr)
 					} else {
 						dropObsoleteTenantSchema(db)
+						if purged, purgeErr := repository.NewAuthRepository(db).PurgeDeletedUsers(); purgeErr != nil {
+							log.Printf("[WARNING] Purge des comptes supprimés: %v", purgeErr)
+						} else if purged > 0 {
+							log.Printf("[OK] %d compte(s) supprimé(s) effacé(s) définitivement", purged)
+						}
 						if seedErr := seeder.Seed(db); seedErr != nil {
 							log.Printf("[WARNING] Echec seeder: %v", seedErr)
 						}
