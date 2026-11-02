@@ -47,13 +47,14 @@ func main() {
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		log.Println("WARNING: DATABASE_URL non définie, l'app démarre sans DB")
+		log.Fatal("DATABASE_URL non définie : aucun compte ne peut être lu")
 	}
 
 	var db *gorm.DB
 
-	// Connexion DB avec retry en goroutine pour ne pas bloquer le démarrage HTTP
-	// Le serveur démarre immédiatement, les endpoints retournent 503 si DB pas prête
+	// Connexion DB avec retry (la base peut démarrer après le service). Le
+	// serveur n'ouvre qu'une fois la base jointe : sans elle, ses dépôts
+	// resteraient vides pour toujours et chaque connexion planterait.
 	dbReady := make(chan struct{})
 
 	go func() {
@@ -104,20 +105,15 @@ func main() {
 		close(dbReady)
 	}()
 
-	// Attendre max 3s pour que la DB soit prête avant de démarrer
-	// Si pas prête, le serveur démarre quand même (endpoints retourneront 503)
-	select {
-	case <-dbReady:
-		log.Println("[OK] DB prête au démarrage du serveur")
-	case <-time.After(3 * time.Second):
-		log.Println("[INFO] DB pas encore prête, démarrage serveur en mode dégradé")
+	// Attendre la base (30 tentatives, ~60 s). Injoignable : on s'arrête, et
+	// Docker / Kubernetes relancent le conteneur plutôt que de servir à vide.
+	<-dbReady
+	if db == nil {
+		log.Fatalf("DB inaccessible au démarrage : arrêt pour être relancé")
 	}
+	log.Println("[OK] DB prête au démarrage du serveur")
 
-	// Initialiser les repositories (nil si DB pas connectée)
-	var authRepo repository.AuthRepository
-	if db != nil {
-		authRepo = repository.NewAuthRepository(db)
-	}
+	authRepo := repository.NewAuthRepository(db)
 
 	emailService := services.NewEmailService()
 
